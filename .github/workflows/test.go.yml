@@ -1,10 +1,10 @@
 name: Test-Go
 
 on:
-  push:
-    branches: [ master ]
   pull_request:
     branches: [ master ]
+
+  workflow_dispatch:
 
 jobs:
   test-go:
@@ -17,11 +17,23 @@ jobs:
       run:
         working-directory: ./test
     steps:
+
     - name: Install Go
       uses: actions/setup-go@v2
       with:
         go-version: ${{ matrix.go-version }}
+
     - name: Checkout code
       uses: actions/checkout@v2
+
+    - uses: DamianReeves/write-file-action
+      with:
+        path: go.mod
+        contents: |
+          echo "replace github.com/keeper-security/secrets-manager-go/core => ../core"
+        write-mode: append
+
+    - run: pwd; ls -la; cat go.mod
+
     - name: Run tests
       run: go test -p 1 ./...
