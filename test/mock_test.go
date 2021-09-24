@@ -3,7 +3,7 @@ package test
 import (
 	"crypto/rand"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -203,7 +203,7 @@ func TestMockHttpServer(t *testing.T) {
 	MockResponseQueue.AddMockResponse(NewMockResponse([]byte("TEST"), 200, nil))
 	if resp, err := http.Get("https://127.0.0.1/test"); err != nil {
 		t.Fatal("failed to send first request:", err)
-	} else if body, err := io.ReadAll(resp.Body); err != nil || string(body) != "TEST" {
+	} else if body, err := ioutil.ReadAll(resp.Body); err != nil || string(body) != "TEST" {
 		t.Fatal("failed to read first request:", err)
 	}
 }
@@ -358,13 +358,15 @@ func (f *MockFile) Dump(secret []byte, flags *MockFlags) map[string]interface{} 
 	return fileData
 }
 
+const MockRecordNoLabelTag string = "__NONE__"
+
 type MockRecord struct {
 	Uid          string
 	RecordType   string
 	Title        string
 	IsEditable   bool
 	Files        map[string]interface{}
-	Fields       map[string]interface{}
+	Fields       map[string]map[string]interface{}
 	CustomFields map[string]map[string]interface{}
 }
 
@@ -377,10 +379,12 @@ func NewMockRecord(recordType, uid, title string) *MockRecord {
 	}
 
 	// Some default data
-	fields := map[string]interface{}{
-		"login":    "Login " + uid,
-		"password": "******** " + uid,
-		"url":      "http://localhost/" + uid,
+	fields := map[string]map[string]interface{}{
+		MockRecordNoLabelTag: {
+			"login":    "Login " + uid,
+			"password": "******** " + uid,
+			"url":      "http://localhost/" + uid,
+		},
 	}
 
 	return &MockRecord{
@@ -401,7 +405,7 @@ func ConvertKeeperRecord(keeperRecord *ksm.Record) *MockRecord {
 		Title:        keeperRecord.Title(),
 		IsEditable:   false,
 		Files:        map[string]interface{}{},
-		Fields:       map[string]interface{}{},
+		Fields:       map[string]map[string]interface{}{},
 		CustomFields: map[string]map[string]interface{}{},
 	}
 
@@ -409,6 +413,7 @@ func ConvertKeeperRecord(keeperRecord *ksm.Record) *MockRecord {
 		if aFields, ok := iFields.([]interface{}); ok {
 			for _, fmap := range aFields {
 				if fld, ok := fmap.(map[string]interface{}); ok {
+					flabel, _ := fld["label"].(string)
 					ftype, _ := fld["type"].(string)
 					fval := []interface{}{}
 					if fv, ok := fld["value"].([]interface{}); ok {
@@ -416,7 +421,7 @@ func ConvertKeeperRecord(keeperRecord *ksm.Record) *MockRecord {
 					} else {
 						fval = append(fval, fv)
 					}
-					mockRecord.Field(ftype, fval)
+					mockRecord.Field(ftype, flabel, fval)
 				}
 			}
 		}
@@ -434,7 +439,7 @@ func ConvertKeeperRecord(keeperRecord *ksm.Record) *MockRecord {
 					} else {
 						fval = append(fval, fv)
 					}
-					mockRecord.CustomField(flabel, ftype, fval)
+					mockRecord.CustomField(ftype, flabel, fval)
 				}
 			}
 		}
@@ -444,14 +449,21 @@ func ConvertKeeperRecord(keeperRecord *ksm.Record) *MockRecord {
 	return &mockRecord
 }
 
-func (r *MockRecord) Field(fieldType string, value interface{}) {
+func (r *MockRecord) Field(fieldType, label string, value interface{}) {
+	// Fields can sometimes have a label
+	if label == "" {
+		label = MockRecordNoLabelTag
+	}
 	if _, ok := value.([]interface{}); !ok {
 		value = []interface{}{value}
 	}
-	r.Fields[fieldType] = value
+	if _, ok := r.Fields[label]; !ok {
+		r.Fields[label] = map[string]interface{}{}
+	}
+	r.Fields[label][fieldType] = value
 }
 
-func (r *MockRecord) CustomField(label, fieldType string, value interface{}) {
+func (r *MockRecord) CustomField(fieldType, label string, value interface{}) {
 	if fieldType == "" {
 		fieldType = "text"
 	}
@@ -488,11 +500,17 @@ func (r *MockRecord) Dump(secret []byte, flags *MockFlags) map[string]interface{
 		})
 	}
 
-	for fieldType, field := range r.Fields {
-		fields = append(fields, map[string]interface{}{
-			"type":  fieldType,
-			"value": field,
-		})
+	for label := range r.Fields {
+		for fieldType, field := range r.Fields[label] {
+			data := map[string]interface{}{
+				"type":  fieldType,
+				"value": field,
+			}
+			if label != MockRecordNoLabelTag {
+				data["label"] = label
+			}
+			fields = append(fields, data)
+		}
 	}
 
 	for label := range r.CustomFields {

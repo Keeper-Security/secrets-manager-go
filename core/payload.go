@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"net/http"
 
 	klog "github.com/keeper-security/secrets-manager-go/core/logger"
 )
@@ -90,6 +91,27 @@ func (p *UpdatePayload) UpdatePayloadFromJson(jsonData string) {
 }
 
 type EncryptedPayload struct {
-	Payload   []byte
-	Signature []byte
+	EncryptedPayload []byte
+	Signature        []byte
+}
+
+func NewEncryptedPayload(encryptedPayload []byte, signature []byte) *EncryptedPayload {
+	return &EncryptedPayload{
+		EncryptedPayload: encryptedPayload,
+		Signature:        signature,
+	}
+}
+
+type KsmHttpResponse struct {
+	StatusCode   int
+	Data         []byte
+	HttpResponse *http.Response
+}
+
+func NewKsmHttpResponse(statusCode int, data []byte, httpResponse *http.Response) *KsmHttpResponse {
+	return &KsmHttpResponse{
+		StatusCode:   statusCode,
+		Data:         data,
+		HttpResponse: httpResponse,
+	}
 }

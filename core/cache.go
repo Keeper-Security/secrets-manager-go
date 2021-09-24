@@ -1,11 +1,12 @@
 package core
 
 import (
+	"io/ioutil"
 	"os"
 	"strings"
 )
 
-const defautFilePath = "cache.dat"
+const defautFilePath = "ksm_cache.bin"
 
 type ICache interface {
 	SaveCachedValue(data []byte) error
@@ -22,11 +23,11 @@ func (c *fileCache) SaveCachedValue(data []byte) error {
 	if data == nil {
 		data = []byte{}
 	}
-	return os.WriteFile(c.FilePath, data, 0600)
+	return ioutil.WriteFile(c.FilePath, data, 0600)
 }
 
 func (c *fileCache) GetCachedValue() ([]byte, error) {
-	return os.ReadFile(c.FilePath)
+	return ioutil.ReadFile(c.FilePath)
 }
 
 func (c *fileCache) Purge() error {
