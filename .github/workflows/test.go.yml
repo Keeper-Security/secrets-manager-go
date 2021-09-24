@@ -26,12 +26,8 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
-    - uses: DamianReeves/write-file-action
-      with:
-        path: go.mod
-        contents: |
-          echo "replace github.com/keeper-security/secrets-manager-go/core => ../core"
-        write-mode: append
+    - run: |
+        echo "replace github.com/keeper-security/secrets-manager-go/core => ../core" >> go.mod
 
     - run: pwd; ls -la; cat go.mod
 
