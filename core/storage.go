@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,7 +33,7 @@ type fileKeyValueStorage struct {
 
 func (f *fileKeyValueStorage) ReadStorage() map[string]interface{} {
 	f.createConfigFileIfMissing()
-	content, err := os.ReadFile(f.ConfigPath)
+	content, err := ioutil.ReadFile(f.ConfigPath)
 	if err != nil {
 		klog.Error("Unable to open file: " + f.ConfigPath + " Error: " + err.Error())
 		return map[string]interface{}{}
@@ -58,7 +59,7 @@ func (f *fileKeyValueStorage) SaveStorage(updatedConfig map[string]interface{}) 
 		klog.Error("Error writing JSON: " + err.Error())
 		return
 	}
-	if err := os.WriteFile(f.ConfigPath, content, 0666); err != nil {
+	if err := ioutil.WriteFile(f.ConfigPath, content, 0666); err != nil {
 		klog.Error("Error writing JSON configuration file: " + err.Error())
 	}
 }
@@ -169,13 +170,17 @@ func NewMemoryKeyValueStorage(config ...interface{}) *memoryKeyValueStorage {
 	if len(config) > 0 {
 		switch t := config[0].(type) {
 		case string:
-			iConfig = JsonToDict(t)
+			jsonStr := t
+			if jsonBytes := UrlSafeStrToBytes(jsonStr); len(jsonBytes) > 2 {
+				jsonStr = string(jsonBytes)
+			}
+			iConfig = JsonToDict(jsonStr)
 			if len(iConfig) == 0 {
 				strJson := fmt.Sprintf("%.16s", t)
 				if len(t) > len(strJson) {
 					strJson += "..."
 				}
-				klog.Error(fmt.Sprintf("Could not load config data. Json text size: %d  JSON: '%s'", len(t), strJson))
+				klog.Error(fmt.Sprintf("Could not load config data. Text size: %d  Text: '%s'", len(t), strJson))
 			}
 		case map[string]interface{}:
 			iConfig = t

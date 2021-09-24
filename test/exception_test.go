@@ -11,7 +11,7 @@ func TestOurException(t *testing.T) {
 	// Exceptions the Secrets Manager server will send that have meaning.
 	defer func() {
 		if r := recover(); r != nil {
-			expectedMsg := "Fetch Error: Error: access_denied, message=Signature is invalid"
+			expectedMsg := "POST Error: Error: access_denied, message=Signature is invalid"
 			if msg, ok := r.(string); ok && strings.TrimSpace(msg) == expectedMsg {
 				t.Log("Received expected error code 403 'Signature is invalid'")
 			} else {
@@ -24,10 +24,10 @@ func TestOurException(t *testing.T) {
 	rawJson := `
 {
 	"hostname": "fake.keepersecurity.com",
-	"appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
-	"clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
-	"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-	"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
+	"appKey": "8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE=",
+	"clientId": "45haqPHrK5csKjr2jXJRYrykxaE50QsAR/FR8OiU7aak5LexpGX50/23FJRwNK02thysUBf7AZReQK9q7Q8UUw==",
+	"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo=",
+	"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
 }`
 	config := ksm.NewMemoryKeyValueStorage(rawJson)
 	sm := ksm.NewSecretsManagerFromConfig(config)
@@ -55,7 +55,7 @@ func TestNotOurException(t *testing.T) {
 	// Generic message not specific to the Secrets Manager server.
 	defer func() {
 		if r := recover(); r != nil {
-			expectedMsg := "Fetch Error: HTTPError: Bad Gateway"
+			expectedMsg := "POST Error: HTTPError: Bad Gateway"
 			if msg, ok := r.(string); ok && strings.TrimSpace(msg) == expectedMsg {
 				t.Log("Received expected error code 502 'Bad Gateway'")
 			} else {
@@ -68,17 +68,17 @@ func TestNotOurException(t *testing.T) {
 	rawJson := `
 {
 	"hostname": "fake.keepersecurity.com",
-	"appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
-	"clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
-	"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-	"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
+	"appKey": "8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE=",
+	"clientId": "45haqPHrK5csKjr2jXJRYrykxaE50QsAR/FR8OiU7aak5LexpGX50/23FJRwNK02thysUBf7AZReQK9q7Q8UUw==",
+	"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo=",
+	"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
 }`
 	config := ksm.NewMemoryKeyValueStorage(rawJson)
 	sm := ksm.NewSecretsManagerFromConfig(config)
 
 	MockResponseQueue.AddMockResponse(NewMockResponse([]byte("Bad Gateway"), 502, nil))
 
-	if _, err := sm.GetSecrets(nil); err != nil && err.Error() == "Fetch Error: HTTPError: Bad Gateway" {
+	if _, err := sm.GetSecrets(nil); err != nil && err.Error() == "POST Error: HTTPError: Bad Gateway" {
 		t.Log("Received expected error code 502 'Bad Gateway'")
 	} else {
 		t.Error("did not get correct error message")
@@ -92,23 +92,23 @@ func TestKeyRotation(t *testing.T) {
 	rawJson := `
 {
 	"hostname": "fake.keepersecurity.com",
-	"appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
-	"clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
-	"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-	"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
+	"appKey": "8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE=",
+	"clientId": "45haqPHrK5csKjr2jXJRYrykxaE50QsAR/FR8OiU7aak5LexpGX50/23FJRwNK02thysUBf7AZReQK9q7Q8UUw==",
+	"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo=",
+	"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
 }`
 	config := ksm.NewMemoryKeyValueStorage(rawJson)
 	sm := ksm.NewSecretsManagerFromConfig(config, Ctx)
 
 	res1 := NewMockResponse([]byte{}, 200, nil)
 	mockRecord1 := res1.AddRecord("My Record", "login", "", nil, nil)
-	mockRecord1.Field("login", "My Login")
-	mockRecord1.Field("password", "My Password")
+	mockRecord1.Field("login", "", "My Login")
+	mockRecord1.Field("password", "", "My Password")
 
 	res2 := NewMockResponse([]byte{}, 200, nil)
 	mockRecord2 := res2.AddRecord("My Record", "login", "", nil, nil)
-	mockRecord2.Field("login", "KEY CHANGE")
-	mockRecord2.Field("password", "My Password")
+	mockRecord2.Field("login", "", "KEY CHANGE")
+	mockRecord2.Field("password", "", "My Password")
 
 	// KEY ROTATION ERROR. error needs to be key.
 	errorJson := `

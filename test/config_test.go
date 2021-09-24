@@ -1,6 +1,7 @@
 package test
 
 import (
+	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
@@ -50,18 +51,18 @@ func TestDefaultLoadFromJson(t *testing.T) {
 		rawJson := `
 {
 	"hostname": "fake.keepersecurity.com",
-	"appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
-	"clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
-	"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI",
+	"appKey": "9vVajcvJTGsa2Opc/jvhEiJLRKHtg2Rm4PAtUoP3URw=",
+	"clientId": "rYebZN1TWiJagL+wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW+NNHDaq/8SQQ2sOYYT1Nhk5Ya/SkQ==",
+	"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI",
 	"serverPublicKeyId": "7"
 }
 		`
-		if err := os.WriteFile(defaultConfigName, []byte(rawJson), 0644); err == nil {
+		if err := ioutil.WriteFile(defaultConfigName, []byte(rawJson), 0644); err == nil {
 			sm := ksm.NewSecretsManager()
 			if sm.Config.Get(ksm.KEY_HOSTNAME) != "fake.keepersecurity.com" {
 				t.Error("did not get correct hostname")
 			}
-			if sm.Config.Get(ksm.KEY_APP_KEY) != "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw" {
+			if sm.Config.Get(ksm.KEY_APP_KEY) != "9vVajcvJTGsa2Opc/jvhEiJLRKHtg2Rm4PAtUoP3URw=" {
 				t.Error("did not get correct app key")
 			}
 		} else {
@@ -87,14 +88,14 @@ func TestOverwriteViaArgs(t *testing.T) {
 	if err := os.Chdir(tempDirName); err == nil {
 		rawJson := `
 {
-	"appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
-	"clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
-	"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-	"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI",
+	"appKey": "9vVajcvJTGsa2Opc/jvhEiJLRKHtg2Rm4PAtUoP3URw=",
+	"clientId": "rYebZN1TWiJagL+wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW+NNHDaq/8SQQ2sOYYT1Nhk5Ya/SkQ==",
+	"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo=",
+	"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI",
 	"serverPublicKeyId": "7"
 }
 		`
-		if err := os.WriteFile(defaultConfigName, []byte(rawJson), 0644); err == nil {
+		if err := ioutil.WriteFile(defaultConfigName, []byte(rawJson), 0644); err == nil {
 			// Pass in the client key and hostname
 			sm := ksm.NewSecretsManagerFromSettings("ABC123", "localhost", true)
 			if sm.Config.Get(ksm.KEY_HOSTNAME) != "localhost" {

@@ -11,14 +11,14 @@ import (
 func generateMockresponse(uid string) *MockResponse {
 	res1 := NewMockResponse([]byte{}, 200, nil)
 	one := res1.AddRecord("My Record 1", "", uid, nil, nil)
-	one.Field("login", "My Login 1")
-	one.Field("password", "My Password 1")
-	one.CustomField("My Custom 1", "text", "custom1")
+	one.Field("login", "", "My Login 1")
+	one.Field("password", "", "My Password 1")
+	one.CustomField("text", "My Custom 1", "custom1")
 
 	// The frontend allows for custom field to not have unique names :(. The best way we
 	// can handle this is to set label and field type.
-	one.CustomField("My Custom 1", "text", "custom1")
-	one.CustomField("My Custom 2", "text", []interface{}{"one", "two", "three"})
+	one.CustomField("text", "My Custom 1", "custom1")
+	one.CustomField("text", "My Custom 2", []interface{}{"one", "two", "three"})
 
 	phoneData := []interface{}{
 		map[string]string{"number": "555-5555555", "ext": "55"},
@@ -26,10 +26,10 @@ func generateMockresponse(uid string) *MockResponse {
 		map[string]string{"number": "888-8888888", "ext": "", "type": "Home"},
 		map[string]string{"number": "999-9999999", "type": "Work"},
 	}
-	one.CustomField("phone", "text", phoneData)
+	one.CustomField("text", "phone", phoneData)
 
 	nameData := []interface{}{map[string]string{"first": "Jenny", "middle": "X", "last": "Smith"}}
-	one.CustomField("name", "text", nameData)
+	one.CustomField("text", "name", nameData)
 	return res1
 }
 
@@ -41,10 +41,10 @@ func TestGetNotation(t *testing.T) {
 	rawJson := `
 	{
 		"hostname": "fake.keepersecurity.com",
-		"appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
-		"clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
-		"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-		"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
+		"appKey": "9vVajcvJTGsa2Opc/jvhEiJLRKHtg2Rm4PAtUoP3URw=",
+		"clientId": "rYebZN1TWiJagL+wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW+NNHDaq/8SQQ2sOYYT1Nhk5Ya/SkQ==",
+		"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo=",
+		"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
 	}
 				`
 	config := ksm.NewMemoryKeyValueStorage(rawJson)
@@ -107,12 +107,8 @@ func TestGetNotation(t *testing.T) {
 	// We should get an array instead of a single value.
 	success = false
 	if value, err := sm.GetNotation(fmt.Sprintf("%s://%s/field/login[]", prefix, uid)); err == nil && len(value) == 1 {
-		if vmap, ok := value[0].([]map[string]interface{}); ok && len(vmap) > 0 {
-			if val, ok := vmap[0]["value"].([]interface{}); ok && len(val) > 0 {
-				if v, ok := val[0].(string); ok && v == "My Login 1" {
-					success = true
-				}
-			}
+		if v, ok := value[0].(string); ok && v == "My Login 1" {
+			success = true
 		}
 	}
 	if !success {
@@ -154,11 +150,9 @@ func TestGetNotation(t *testing.T) {
 
 	// Custom field, get the second value
 	success = false
-	if value, err := sm.GetNotation(fmt.Sprintf("%s://%s/custom_field/My Custom 2[]", prefix, uid)); err == nil && len(value) == 1 {
-		if vmap, ok := value[0].([]map[string]interface{}); ok && len(vmap) > 0 {
-			if val, ok := vmap[0]["value"].([]interface{}); ok && len(val) == 3 && fmt.Sprintf("%v", val) == "[one two three]" {
-				success = true
-			}
+	if value, err := sm.GetNotation(fmt.Sprintf("%s://%s/custom_field/My Custom 2[]", prefix, uid)); err == nil && len(value) == 3 {
+		if fmt.Sprintf("%v", value) == "[one two three]" {
+			success = true
 		}
 	}
 	if !success {
@@ -232,10 +226,10 @@ func TestSecretsManagerCustomField(t *testing.T) {
 	rawJson := `
 	{
 		"hostname": "fake.keepersecurity.com",
-		"appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
-		"clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
-		"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-		"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
+		"appKey": "9vVajcvJTGsa2Opc/jvhEiJLRKHtg2Rm4PAtUoP3URw=",
+		"clientId": "rYebZN1TWiJagL+wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW+NNHDaq/8SQQ2sOYYT1Nhk5Ya/SkQ==",
+		"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo=",
+		"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
 	}
 				`
 	config := ksm.NewMemoryKeyValueStorage(rawJson)
@@ -246,14 +240,14 @@ func TestSecretsManagerCustomField(t *testing.T) {
 	// We want to remove the 'custom' key from the JSON
 	res1 := NewMockResponse([]byte{}, 200, &MockFlags{PruneCustomFields: true})
 	one := res1.AddRecord("My Record 1", "", "", nil, nil)
-	one.Field("login", "My Login 1")
-	one.Field("password", "My Password 1")
+	one.Field("login", "", "My Login 1")
+	one.Field("password", "", "My Password 1")
 	MockResponseQueue.AddMockResponse(res1)
 
 	res2 := NewMockResponse([]byte{}, 200, &MockFlags{PruneCustomFields: true})
 	two := res2.AddRecord("My Record 2", "", "", nil, nil)
-	two.Field("login", "My Login 2")
-	two.Field("password", "My Password 2")
+	two.Field("login", "", "My Login 2")
+	two.Field("password", "", "My Password 2")
 	MockResponseQueue.AddMockResponse(res2)
 
 	// Make sure the mock worked

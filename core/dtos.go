@@ -2,7 +2,7 @@ package core
 
 import (
 	"fmt"
-	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -428,6 +428,125 @@ func (r *Record) Update() {
 	r.RawJson = DictToJson(r.RecordDict)
 }
 
+func (r *Record) value(values []interface{}, single bool) []interface{} {
+	if len(values) == 0 {
+		return []interface{}{}
+	}
+	if single {
+		return []interface{}{values[0]}
+	}
+	return values
+}
+
+func (r *Record) fieldSearch(fields []interface{}, fieldKey string) map[string]interface{} {
+	// This is a generic field search that returns the field
+	// It will work for for both standard and custom fields.
+	// It returns the field as a map[string]interface{}.
+
+	foundItem := map[string]interface{}{}
+	if len(fields) == 0 {
+		return foundItem
+	}
+
+	// First check in the field_key matches any labels. Label matching is case sensitive.
+	for _, item := range fields {
+		if iValue, ok := item.(map[string]interface{}); ok {
+			if iLabel, found := iValue["label"]; found {
+				if sLabel, ok := iLabel.(string); ok && strings.EqualFold(sLabel, fieldKey) {
+					foundItem = iValue
+					break
+				}
+			}
+		}
+	}
+	// If the label was not found, check the field type. Field type is case insensitive.
+	if len(foundItem) == 0 {
+		for _, item := range fields {
+			if iValue, ok := item.(map[string]interface{}); ok {
+				if iType, found := iValue["type"]; found {
+					if sType, ok := iType.(string); ok && strings.EqualFold(sType, fieldKey) {
+						foundItem = iValue
+						break
+					}
+				}
+			}
+		}
+	}
+	return foundItem
+}
+
+func (r *Record) getStandardField(fieldType string) map[string]interface{} {
+	if iFields, found := r.RecordDict["fields"]; found {
+		if sFields, ok := iFields.([]interface{}); ok {
+			return r.fieldSearch(sFields, fieldType)
+		}
+	}
+	return map[string]interface{}{}
+}
+
+func (r *Record) GetStandardFieldValue(fieldType string, single bool) ([]interface{}, error) {
+	field := r.getStandardField(fieldType)
+	if len(field) == 0 {
+		return nil, fmt.Errorf("cannot find standard field %s in record", fieldType)
+	}
+	sValue := []interface{}{}
+	if iValue, found := field["value"]; found {
+		if sVal, ok := iValue.([]interface{}); ok {
+			sValue = sVal
+		}
+	}
+	return r.value(sValue, single), nil
+}
+
+func (r *Record) SetStandardFieldValue(fieldType string, value interface{}) error {
+	field := r.getStandardField(fieldType)
+	if len(field) == 0 {
+		return fmt.Errorf("cannot find standard field %s in record", fieldType)
+	}
+	if _, ok := value.([]interface{}); !ok {
+		value = []interface{}{value}
+	}
+	field["value"] = value
+	r.Update()
+	return nil
+}
+
+func (r *Record) getCustomField(fieldType string) map[string]interface{} {
+	if iFields, found := r.RecordDict["custom"]; found {
+		if sFields, ok := iFields.([]interface{}); ok {
+			return r.fieldSearch(sFields, fieldType)
+		}
+	}
+	return map[string]interface{}{}
+}
+
+func (r *Record) GetCustomFieldValue(fieldType string, single bool) ([]interface{}, error) {
+	field := r.getCustomField(fieldType)
+	if len(field) == 0 {
+		return nil, fmt.Errorf("cannot find custom field %s in record", fieldType)
+	}
+	sValue := []interface{}{}
+	if iValue, found := field["value"]; found {
+		if sVal, ok := iValue.([]interface{}); ok {
+			sValue = sVal
+		}
+	}
+	return r.value(sValue, single), nil
+}
+
+func (r *Record) SetCustomFieldValue(fieldType string, value interface{}) error {
+	field := r.getCustomField(fieldType)
+	if len(field) == 0 {
+		return fmt.Errorf("cannot find custom field %s in record", fieldType)
+	}
+	if _, ok := value.([]interface{}); !ok {
+		value = []interface{}{value}
+	}
+	field["value"] = value
+	r.Update()
+	return nil
+}
+
 func (r *Record) Print() {
 	fmt.Println("===")
 	fmt.Println("Title: " + r.Title())
@@ -612,7 +731,7 @@ func (f *KeeperFile) GetFileData() []byte {
 			fileUrlStr := fmt.Sprintf("%v", fileUrl)
 			if rs, err := http.Get(fileUrlStr); err == nil {
 				defer rs.Body.Close()
-				if fileEncryptedData, err := io.ReadAll(rs.Body); err == nil {
+				if fileEncryptedData, err := ioutil.ReadAll(rs.Body); err == nil {
 					if fileData, err := Decrypt(fileEncryptedData, fileKey); err == nil {
 						f.FileData = fileData
 					}
@@ -645,7 +764,7 @@ func (f *KeeperFile) SaveFile(path string, createFolders bool) bool {
 	}
 
 	fileData := f.GetFileData()
-	if err := os.WriteFile(path, fileData, 0644); err != nil {
+	if err := ioutil.WriteFile(path, fileData, 0644); err != nil {
 		klog.Error("error savig file " + err.Error())
 	}
 

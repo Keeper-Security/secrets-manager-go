@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"reflect"
@@ -18,8 +18,16 @@ import (
 
 const (
 	secretsManagerNotationPrefix   string = "keeper"
-	defaultKeeperServerPublicKeyId string = "7"
+	defaultKeeperServerPublicKeyId string = "10"
 )
+
+// var (
+// 	// Field types that can be inflated. Used for notation.
+// 	inflateRefTypes = map[string][]string{
+// 		"addressRef": []string{"address"},
+// 		"cardRef":    []string{"paymentCard", "text", "pinCode", "addressRef"},
+// 	}
+// )
 
 type SecretsManager struct {
 	Token          string
@@ -134,7 +142,8 @@ func (c *SecretsManager) loadConfig() {
 			klog.Panicln("Cannot locate One Time Token.")
 		}
 
-		existingSecretKeyHash := UrlSafeHmacFromString(existingSecretKey, clientIdHashTag)
+		existingSecretKeyBytes := UrlSafeStrToBytes(existingSecretKey)
+		existingSecretKeyHash := Base64HmacFromString(existingSecretKeyBytes, clientIdHashTag)
 
 		c.Config.Delete(KEY_CLIENT_ID)
 		c.Config.Delete(KEY_PRIVATE_KEY)
@@ -144,7 +153,7 @@ func (c *SecretsManager) loadConfig() {
 
 		if privateKeyStr := strings.TrimSpace(c.Config.Get(KEY_PRIVATE_KEY)); privateKeyStr == "" {
 			if privateKeyDer, err := GeneratePrivateKeyDer(); err == nil {
-				c.Config.Set(KEY_PRIVATE_KEY, BytesToUrlSafeStr(privateKeyDer))
+				c.Config.Set(KEY_PRIVATE_KEY, BytesToBase64(privateKeyDer))
 			} else {
 				klog.Panicln("Failed to generate private key. " + err.Error())
 			}
@@ -184,7 +193,7 @@ func (c *SecretsManager) LoadSecretKey() string {
 	return strings.TrimSpace(currentSecretKey)
 }
 
-func (c *SecretsManager) GenerateTransmissionKey(keyId string) TransmissionKey {
+func (c *SecretsManager) GenerateTransmissionKey(keyId string) *TransmissionKey {
 	serverPublicKey, ok := keeperServerPublicKeys[keyId]
 	if !ok || strings.TrimSpace(serverPublicKey) == "" {
 		klog.Panicf("The public key id %s does not exist.", keyId)
@@ -193,13 +202,11 @@ func (c *SecretsManager) GenerateTransmissionKey(keyId string) TransmissionKey {
 	transmissionKey, _ := GenerateRandomBytes(Aes256KeySize)
 	serverPublicRawKeyBytes := UrlSafeStrToBytes(serverPublicKey)
 	encryptedKey, _ := PublicEncrypt(transmissionKey, serverPublicRawKeyBytes, nil)
-	result := TransmissionKey{
+	return &TransmissionKey{
 		PublicKeyId:  keyId,
 		Key:          transmissionKey,
 		EncryptedKey: encryptedKey,
 	}
-
-	return result
 }
 
 func (c *SecretsManager) PrepareContext() *Context {
@@ -226,7 +233,7 @@ func (c *SecretsManager) PrepareContext() *Context {
 	}
 	clientIdBytes := Base64ToBytes(clientId)
 	context := &Context{
-		TransmissionKey: transmissionKey,
+		TransmissionKey: *transmissionKey,
 		ClientId:        clientIdBytes,
 		ClientKey:       secretKey,
 	}
@@ -237,119 +244,192 @@ func (c *SecretsManager) PrepareContext() *Context {
 	return context
 }
 
-func (c *SecretsManager) encryptAndSignPayload(context *Context, payloadJson string) (res EncryptedPayload, err error) {
-	payloadBytes := StringToBytes(payloadJson)
-
-	encryptedPayload, err := EncryptAesGcm(payloadBytes, context.TransmissionKey.Key)
-	if err != nil {
-		klog.Error("Error encrypting the payload: " + err.Error())
+func (c *SecretsManager) encryptAndSignPayload(transmissionKey *TransmissionKey, payload interface{}) (res *EncryptedPayload, err error) {
+	payloadJsonStr := ""
+	switch v := payload.(type) {
+	case nil:
+		return nil, errors.New("error converting payload - payload == nil")
+	case *GetPayload:
+		if payloadJsonStr, err = v.GetPayloadToJson(); err != nil {
+			return nil, errors.New("error converting get payload to JSON: " + err.Error())
+		}
+	case *UpdatePayload:
+		if payloadJsonStr, err = v.UpdatePayloadToJson(); err != nil {
+			return nil, errors.New("error converting update payload to JSON: " + err.Error())
+		}
+	default:
+		return nil, fmt.Errorf("error converting payload - unknown payload type for '%v'", v)
 	}
 
-	signatureBase := make([]byte, 0, len(context.TransmissionKey.EncryptedKey)+len(encryptedPayload))
-	signatureBase = append(signatureBase, ([]byte)(context.TransmissionKey.EncryptedKey)...)
+	payloadBytes := StringToBytes(payloadJsonStr)
+
+	encryptedPayload, err := EncryptAesGcm(payloadBytes, transmissionKey.Key)
+	if err != nil {
+		return nil, errors.New("error encrypting the payload: " + err.Error())
+	}
+
+	encryptedKey := transmissionKey.EncryptedKey
+	signatureBase := make([]byte, 0, len(encryptedKey)+len(encryptedPayload))
+	signatureBase = append(signatureBase, encryptedKey...)
 	signatureBase = append(signatureBase, encryptedPayload...)
 
-	if pk, err := DerBase64PrivateKeyToPrivateKey(c.Config.Get(KEY_PRIVATE_KEY)); err == nil {
-		if signature, err := Sign(signatureBase, pk); err == nil {
-			return EncryptedPayload{
-				Payload:   encryptedPayload,
-				Signature: signature,
-			}, nil
-		} else {
-			return EncryptedPayload{}, errors.New("error generating signature: " + err.Error())
-		}
-	} else {
-		return EncryptedPayload{}, errors.New("error loading private key: " + err.Error())
+	privateKey := c.Config.Get(KEY_PRIVATE_KEY)
+	pk, err := DerBase64PrivateKeyToPrivateKey(privateKey)
+	if err != nil {
+		return nil, errors.New("error loading private key: " + err.Error())
 	}
+
+	signature, err := Sign(signatureBase, pk)
+	if err != nil {
+		return nil, errors.New("error generating signature: " + err.Error())
+	}
+
+	return &EncryptedPayload{
+		EncryptedPayload: encryptedPayload,
+		Signature:        signature,
+	}, nil
 }
 
-func (c *SecretsManager) prepareGetPayload(context *Context, recordsFilter []string) (res EncryptedPayload, err error) {
+func (c *SecretsManager) prepareGetPayload(recordsFilter []string) (res *GetPayload, err error) {
 	payload := GetPayload{
 		ClientVersion: keeperSecretsManagerClientId,
-		ClientId:      BytesToUrlSafeStr(context.ClientId),
+		ClientId:      c.Config.Get(KEY_CLIENT_ID),
 	}
 
 	if appKeyStr := c.Config.Get(KEY_APP_KEY); strings.TrimSpace(appKeyStr) == "" {
 		if publicKeyBytes, err := extractPublicKeyBytes(c.Config.Get(KEY_PRIVATE_KEY)); err == nil {
-			publicKeyBase64 := BytesToUrlSafeStr(publicKeyBytes)
+			publicKeyBase64 := BytesToBase64(publicKeyBytes)
 			// passed once when binding
 			payload.PublicKey = publicKeyBase64
 		} else {
-			return EncryptedPayload{}, errors.New("error extracting public key for get payload")
+			return nil, errors.New("error extracting public key for get payload")
 		}
 	}
 
 	if len(recordsFilter) > 0 {
 		payload.RequestedRecords = recordsFilter
 	}
-	if payloadJson, err := payload.GetPayloadToJson(); err == nil {
-		if encryptedPayload, err := c.encryptAndSignPayload(context, payloadJson); err == nil {
-			return encryptedPayload, nil
-		} else {
-			return EncryptedPayload{}, errors.New("error encrypting get payload: " + err.Error())
-		}
-	} else {
-		return EncryptedPayload{}, errors.New("error converting get payload to JSON: " + err.Error())
-	}
+
+	return &payload, nil
 }
 
-func (c *SecretsManager) prepareUpdatePayload(context *Context, record *Record) (res *EncryptedPayload, err error) {
+func (c *SecretsManager) prepareUpdatePayload(record *Record) (res *UpdatePayload, err error) {
 	payload := UpdatePayload{
 		ClientVersion: keeperSecretsManagerClientId,
-		ClientId:      BytesToUrlSafeStr(context.ClientId),
+		ClientId:      c.Config.Get(KEY_CLIENT_ID),
 	}
 
-	if len(context.ClientKey) < 1 {
-		klog.Panicln("To save and update, client must be authenticated by device token only")
-	}
-
-	// for update, uid of the record
+	// for update, UID of the record
 	payload.RecordUid = record.Uid
 	payload.Revision = record.Revision
 
 	// #TODO: This is where we need to get JSON of the updated Record
-	rawJson := DictToJson(record.RecordDict)
-	rawJsonBytes := StringToBytes(rawJson)
+	// rawJson := DictToJson(record.RecordDict)
+	rawJsonBytes := StringToBytes(record.RawJson)
 	if encryptedRawJsonBytes, err := EncryptAesGcm(rawJsonBytes, record.RecordKeyBytes); err == nil {
-		// for create and update, the record data
-		payload.Data = BytesToUrlSafeStr(encryptedRawJsonBytes)
+		payload.Data = BytesToBase64(encryptedRawJsonBytes)
 	} else {
 		return nil, err
 	}
 
-	if payloadJson, err := payload.UpdatePayloadToJson(); err == nil {
-		if encryptedPayload, err := c.encryptAndSignPayload(context, payloadJson); err == nil {
-			return &encryptedPayload, nil
-		} else {
-			return &EncryptedPayload{}, errors.New("error encrypting update payload: " + err.Error())
-		}
-	} else {
-		return &EncryptedPayload{}, errors.New("error converting update payload to JSON: " + err.Error())
-	}
+	return &payload, nil
 }
 
-func (c *SecretsManager) PostQuery(path string, context *Context, payloadAndSignature *EncryptedPayload) (*http.Response, []byte, error) {
+func (c *SecretsManager) PostQuery(path string, payload interface{}) (body []byte, err error) {
 	keeperServer := GetServerHostname(c.HostName, c.Config)
-
-	transmissionKey := context.TransmissionKey
-	payload := payloadAndSignature.Payload
-	signature := payloadAndSignature.Signature
-
 	url := fmt.Sprintf("https://%s/api/rest/sm/v1/%s", keeperServer, path)
-	rq, err := http.NewRequest("POST", url, bytes.NewBuffer(payload))
+	var transmissionKey *TransmissionKey
+	var ksmRs *KsmHttpResponse
+	if c.context != nil {
+		*c.context = c.PrepareContext()
+	}
+
+	for {
+		transmissionKeyId := strings.TrimSpace(c.Config.Get(KEY_SERVER_PUBLIC_KEY_ID))
+		if transmissionKeyId == "" {
+			transmissionKeyId = defaultKeeperServerPublicKeyId
+			c.Config.Set(KEY_SERVER_PUBLIC_KEY_ID, transmissionKeyId)
+		}
+
+		transmissionKey = c.GenerateTransmissionKey(transmissionKeyId)
+		if c.context != nil {
+			(*c.context).TransmissionKey = *transmissionKey
+		}
+		encryptedPayloadAndSignature, err := c.encryptAndSignPayload(transmissionKey, payload)
+		if err != nil {
+			return nil, errors.New("error encrypting payload: " + err.Error())
+		}
+
+		ksmRs, err = c.PostFunction(url, transmissionKey, encryptedPayloadAndSignature, c.VerifySslCerts)
+		if err != nil {
+			return nil, errors.New("error during POST request: " + err.Error())
+		}
+
+		if c.cache != nil && path == "get_secret" {
+			success := true
+			if ksmRs != nil && ksmRs.StatusCode == 200 {
+				data := make([]byte, 0, len(transmissionKey.Key)+len(ksmRs.Data))
+				data = append(data, transmissionKey.Key...)
+				data = append(data, ksmRs.Data...)
+				c.cache.SaveCachedValue(data)
+			} else {
+				if cachedData, cerr := c.cache.GetCachedValue(); cerr == nil && len(cachedData) >= Aes256KeySize {
+					transmissionKey.Key = cachedData[:Aes256KeySize]
+					data := cachedData[Aes256KeySize:]
+					ksmRs = NewKsmHttpResponse(200, data, nil)
+				} else {
+					success = false
+				}
+			}
+			if success {
+				break
+			}
+		}
+
+		// If we are ok, then break out of the while loop
+		if ksmRs.StatusCode == 200 {
+			break
+		}
+
+		// Handle the error. Handler will return a retry status if it is a recoverable error.
+		if retry, err := c.HandleHttpError(ksmRs.HttpResponse, ksmRs.Data, err); !retry {
+			errMsg := "N/A"
+			if err != nil {
+				errMsg = err.Error()
+			}
+			klog.Panicln("POST Error: " + errMsg)
+		}
+	}
+
+	if ksmRs != nil && len(ksmRs.Data) > 0 {
+		decryptedResponseBytes, err := Decrypt(ksmRs.Data, transmissionKey.Key)
+		return decryptedResponseBytes, err
+	}
+
+	// break out of the loop only on success - empty body/data is a valid response ex. for update
+	return []byte{}, err
+}
+
+func (c *SecretsManager) PostFunction(
+	url string,
+	transmissionKey *TransmissionKey,
+	encryptedPayloadAndSignature *EncryptedPayload,
+	verifySslCerts bool) (*KsmHttpResponse, error) {
+
+	rq, err := http.NewRequest("POST", url, bytes.NewBuffer(encryptedPayloadAndSignature.EncryptedPayload))
 	if err != nil {
-		return nil, nil, err
+		return NewKsmHttpResponse(0, nil, nil), err
 	}
 
 	rq.Header.Set("Content-Type", "application/octet-stream")
-	rq.Header.Set("Content-Length", fmt.Sprint(len(payload)))
+	rq.Header.Set("Content-Length", fmt.Sprint(len(encryptedPayloadAndSignature.EncryptedPayload)))
 	rq.Header.Set("PublicKeyId", transmissionKey.PublicKeyId)
-	rq.Header.Set("TransmissionKey", BytesToUrlSafeStr(transmissionKey.EncryptedKey))
-	rq.Header.Set("Authorization", fmt.Sprintf("Signature %s", BytesToUrlSafeStr(signature)))
+	rq.Header.Set("TransmissionKey", BytesToBase64(transmissionKey.EncryptedKey))
+	rq.Header.Set("Authorization", fmt.Sprintf("Signature %s", BytesToBase64(encryptedPayloadAndSignature.Signature)))
 	// klog.Debug(rq.Header)
 
 	tr := http.DefaultClient.Transport
-	if insecureSkipVerify := !c.VerifySslCerts; insecureSkipVerify {
+	if insecureSkipVerify := !verifySslCerts; insecureSkipVerify {
 		tr = &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify},
 		}
@@ -358,12 +438,12 @@ func (c *SecretsManager) PostQuery(path string, context *Context, payloadAndSign
 
 	rs, err := client.Do(rq)
 	if err != nil {
-		return rs, nil, err
+		return NewKsmHttpResponse(0, nil, rs), err
 	}
 	defer rs.Body.Close()
 
-	rsBody, err := io.ReadAll(rs.Body)
-	return rs, rsBody, err
+	rsBody, err := ioutil.ReadAll(rs.Body)
+	return NewKsmHttpResponse(rs.StatusCode, rsBody, rs), err
 }
 
 func (c *SecretsManager) HandleHttpError(rs *http.Response, body []byte, httpError error) (retry bool, err error) {
@@ -387,7 +467,7 @@ func (c *SecretsManager) HandleHttpError(rs *http.Response, body []byte, httpErr
 
 	responseDict := JsonToDict(string(body))
 	if len(responseDict) == 0 {
-		// This is a unknown error, not one of ours, just throw a HTTPError
+		// This is aN unknown error, not one of ours, just throw a HTTPError
 		return false, errors.New("HTTPError: " + string(body))
 	}
 
@@ -435,60 +515,16 @@ func (c *SecretsManager) HandleHttpError(rs *http.Response, body []byte, httpErr
 	return
 }
 
-func (c *SecretsManager) Fetch(recordFilter []string) (records []*Record, justBound bool, err error) {
+func (c *SecretsManager) fetchAndDecryptSecrets(recordFilter []string) (records []*Record, justBound bool, err error) {
 	records = []*Record{}
 	justBound = false
-	var body []byte
-	var context *Context
 
-	for {
-		context = c.PrepareContext()
-		payloadAndSignature, err := c.prepareGetPayload(context, recordFilter)
-		if err != nil {
-			return records, justBound, err
-		}
-
-		var rs *http.Response
-		rs, body, err = c.PostQuery("get_secret", context, &payloadAndSignature)
-
-		if c.cache != nil {
-			success := true
-			if rs != nil && rs.StatusCode == 200 {
-				data := append([]byte{}, context.TransmissionKey.Key...)
-				c.cache.SaveCachedValue(append(data, body...))
-			} else {
-				if cachedData, cerr := c.cache.GetCachedValue(); cerr == nil && len(cachedData) >= Aes256KeySize {
-					context.TransmissionKey.Key = cachedData[:Aes256KeySize]
-					body = cachedData[Aes256KeySize:]
-				} else {
-					success = false
-				}
-			}
-			if success {
-				break
-			}
-		}
-
-		if err != nil {
-			return records, justBound, err
-		}
-
-		// If we are ok, then break out of the while loop
-		if rs.StatusCode == 200 {
-			break
-		}
-
-		// Handle the error. Handler will return a retry status if it is a recoverable error.
-		if retry, err := c.HandleHttpError(rs, body, err); !retry {
-			errMsg := "N/A"
-			if err != nil {
-				errMsg = err.Error()
-			}
-			klog.Panicln("Fetch Error: " + errMsg)
-		}
+	payload, err := c.prepareGetPayload(recordFilter)
+	if err != nil {
+		return records, justBound, err
 	}
 
-	decryptedResponseBytes, err := Decrypt(body, context.TransmissionKey.Key)
+	decryptedResponseBytes, err := c.PostQuery("get_secret", payload)
 	if err != nil {
 		return records, justBound, err
 	}
@@ -499,13 +535,13 @@ func (c *SecretsManager) Fetch(recordFilter []string) (records []*Record, justBo
 	var secretKey []byte
 	if encryptedAppKey, found := decryptedResponseDict["encryptedAppKey"]; found && encryptedAppKey != nil && fmt.Sprintf("%v", encryptedAppKey) != "" {
 		justBound = true
-		clientKey := c.Config.Get(KEY_CLIENT_KEY)
-		if clientKey == "" {
+		clientKey := UrlSafeStrToBytes(c.Config.Get(KEY_CLIENT_KEY))
+		if len(clientKey) == 0 {
 			return records, justBound, errors.New("client key is missing from the storage")
 		}
 		encryptedMasterKey := UrlSafeStrToBytes(encryptedAppKey.(string))
-		if secretKey, err = Decrypt(encryptedMasterKey, UrlSafeStrToBytes(clientKey)); err == nil {
-			c.Config.Set(KEY_APP_KEY, BytesToUrlSafeStr(secretKey))
+		if secretKey, err = Decrypt(encryptedMasterKey, clientKey); err == nil {
+			c.Config.Set(KEY_APP_KEY, BytesToBase64(secretKey))
 			c.Config.Delete(KEY_CLIENT_KEY)
 		} else {
 			klog.Error("failed to decrypt APP_KEY")
@@ -560,12 +596,12 @@ func (c *SecretsManager) Fetch(recordFilter []string) (records []*Record, justBo
 
 func (c *SecretsManager) GetSecrets(uids []string) (records []*Record, err error) {
 	// Retrieve all records associated with the given application
-	recordsResp, justBound, err := c.Fetch(uids)
+	recordsResp, justBound, err := c.fetchAndDecryptSecrets(uids)
 	if err != nil {
 		return nil, err
 	}
 	if justBound {
-		recordsResp, _, err = c.Fetch(uids)
+		recordsResp, _, err = c.fetchAndDecryptSecrets(uids)
 		if err != nil {
 			return nil, err
 		}
@@ -578,34 +614,13 @@ func (c *SecretsManager) Save(record *Record) (err error) {
 	// Save updated secret values
 	klog.Info("Updating record uid: " + record.Uid)
 
-	for {
-		context := c.PrepareContext()
-		payloadAndSignature, err := c.prepareUpdatePayload(context, record)
-		if err != nil {
-			return err
-		}
-
-		rs, body, err := c.PostQuery("update_secret", context, payloadAndSignature)
-		if err != nil {
-			return err
-		}
-
-		// If we are ok, then break out of the while loop
-		if rs.StatusCode == 200 {
-			break
-		}
-
-		// Handle the error. Handler will return a retry status if it is a recoverable error.
-		if retry, err := c.HandleHttpError(rs, body, err); !retry {
-			errMsg := "N/A"
-			if err != nil {
-				errMsg = err.Error()
-			}
-			klog.Panicln("Save Error: " + errMsg)
-		}
+	payload, err := c.prepareUpdatePayload(record)
+	if err != nil {
+		return err
 	}
 
-	return nil
+	_, err = c.PostQuery("update_secret", payload)
+	return err
 }
 
 func (c *SecretsManager) GetNotation(url string) (fieldValue []interface{}, err error) {
@@ -643,10 +658,10 @@ func (c *SecretsManager) GetNotation(url string) (fieldValue []interface{}, err 
 		}
 	}
 
-	uid, fieldType, key := "", "", ""
+	uid, fieldDataType, key := "", "", ""
 	if urlParts := strings.Split(url, "/"); len(urlParts) == 3 {
 		uid = urlParts[0]
-		fieldType = urlParts[1]
+		fieldDataType = urlParts[1]
 		key = urlParts[2]
 	} else {
 		return fieldValue, fmt.Errorf("could not parse the notation '%s'. Is it valid? ", url)
@@ -655,7 +670,7 @@ func (c *SecretsManager) GetNotation(url string) (fieldValue []interface{}, err 
 	if uid == "" {
 		return fieldValue, errors.New("record UID is missing in the keeper url")
 	}
-	if fieldType == "" {
+	if fieldDataType == "" {
 		return fieldValue, errors.New("field type is missing in the keeper url")
 	}
 	if key == "" {
@@ -723,12 +738,23 @@ func (c *SecretsManager) GetNotation(url string) (fieldValue []interface{}, err 
 
 	record := records[0]
 
-	var iValue []map[string]interface{}
-	if fieldType == "field" {
-		iValue = record.GetFieldsByType(key)
-	} else if fieldType == "custom_field" {
-		iValue = record.GetCustomFieldsByLabel(key) // by default custom[] searches are by label
-	} else if fieldType == "file" {
+	var iValue []interface{}
+	if fieldDataType == "field" {
+		field := record.getStandardField(key)
+		if len(field) == 0 {
+			return fieldValue, fmt.Errorf("cannot find standard field %s", key)
+		}
+		iValue, _ = field["value"].([]interface{})
+		// fieldType, _ = field["type"].(string)
+	} else if fieldDataType == "custom_field" {
+		// iValue = record.GetCustomFieldsByLabel(key) // by default custom[] searches are by label
+		field := record.getCustomField(key)
+		if len(field) == 0 {
+			return fieldValue, fmt.Errorf("cannot find custom field %s", key)
+		}
+		iValue, _ = field["value"].([]interface{})
+		// fieldType, _ = field["type"].(string)
+	} else if fieldDataType == "file" {
 		file := record.FindFileByTitle(key)
 		if file == nil {
 			return fieldValue, fmt.Errorf("cannot find the file %s in record %s. ", key, uid)
@@ -736,19 +762,21 @@ func (c *SecretsManager) GetNotation(url string) (fieldValue []interface{}, err 
 		fieldValue = append(fieldValue, file.GetFileData())
 		return fieldValue, nil
 	} else {
-		return fieldValue, fmt.Errorf("field type of %s is not value. ", fieldType)
+		return fieldValue, fmt.Errorf("field type of %s is not valid. ", fieldDataType)
 	}
+
+	// Inflate the value if its part of list of types to inflate.
+	// This will request additional records	from secrets manager.
+	// if ftypes, found := inflateRefTypes[fieldType]; found {
+	// 	iValue := inflateFieldValue(iValue, ftypes)
+	// }
 
 	if returnSingle {
 		if len(iValue) == 0 {
 			return fieldValue, nil
 		}
-		val, ok := iValue[0]["value"].([]interface{})
-		if !ok {
-			return fieldValue, nil
-		}
-		if len(val) > index {
-			iVal := val[index]
+		if len(iValue) > index {
+			iVal := iValue[index]
 			retMap, mapOk := iVal.(map[string]interface{})
 			if mapOk && strings.TrimSpace(dictKey) != "" {
 				if val, ok := retMap[dictKey]; ok {
@@ -776,7 +804,7 @@ func (c *SecretsManager) GetNotation(url string) (fieldValue []interface{}, err 
 			return fieldValue, fmt.Errorf("the value at index %d does not exist for %s. ", index, url)
 		}
 	} else {
-		fieldValue = append(fieldValue, iValue)
+		fieldValue = iValue
 	}
 
 	return fieldValue, nil

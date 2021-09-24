@@ -69,16 +69,15 @@ func UrlSafeStrToBytes(text string) []byte {
 	// fix non URL Safe strings
 	text = strings.ReplaceAll(text, "+", "-")
 	text = strings.ReplaceAll(text, "/", "_")
-	result, err := base64.RawURLEncoding.DecodeString(text)
-	if err != nil {
-		return nil
-	}
 
-	return result
+	if result, err := base64.RawURLEncoding.DecodeString(text); err == nil {
+		return result
+	}
+	return nil
 }
 
 func BytesToBase64(data []byte) string {
-	return base64.RawStdEncoding.EncodeToString(data)
+	return base64.StdEncoding.EncodeToString(data)
 }
 
 func Base64ToBytes(text string) []byte {
@@ -122,12 +121,11 @@ func UrlSafeSha256FromString(text string) string {
 	return result
 }
 
-// UrlSafeHmacFromString generates URL safe encoded HMAC of the message string where key is URL safe base64 encoded string
-func UrlSafeHmacFromString(key string, message string) string {
-	keyBytes := UrlSafeStrToBytes(key)
+// Base64HmacFromString generates base64 encoded HMAC of the message string with the given key
+func Base64HmacFromString(key []byte, message string) string {
 	msgBytes := StringToBytes(message)
-	hmac := HmacDigest(keyBytes, msgBytes)
-	result := BytesToUrlSafeStr(hmac)
+	hmac := HmacDigest(key, msgBytes)
+	result := BytesToBase64(hmac)
 	return result
 }
 

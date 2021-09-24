@@ -13,10 +13,10 @@ func TestLoginRecordPassword(t *testing.T) {
 	rawJson := `
 	{
 		"hostname": "fake.keepersecurity.com",
-		"appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
-		"clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
-		"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-		"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
+		"appKey": "9vVajcvJTGsa2Opc/jvhEiJLRKHtg2Rm4PAtUoP3URw=",
+		"clientId": "Ae3589ktgynN6vvFtBwlsAbf0fHhXCcf7JqtKXK/3UCELujQuYuXvFFP08d2rb4aQ5Z4ozgD2yek9sjbWj7YoQ==",
+		"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo=",
+		"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
 	}
 				`
 	config := ksm.NewMemoryKeyValueStorage(rawJson)
@@ -26,22 +26,22 @@ func TestLoginRecordPassword(t *testing.T) {
 	// 'fields': [...{'type': 'password', 'value': ['My Password']}...]
 	goodRes := NewMockResponse([]byte{}, 200, nil)
 	good := goodRes.AddRecord("Good Record", "login", "", nil, nil)
-	good.Field("login", "My Login")
-	good.Field("password", "My Password")
+	good.Field("login", "", "My Login")
+	good.Field("password", "", "My Password")
 
 	// A bad record. This would be like if someone removed a password text from an existing field.
 	// 'fields': [...{'type': 'password', 'value': []}...]
 	badRes := NewMockResponse([]byte{}, 200, nil)
 	bad := badRes.AddRecord("Bad Record", "login", "", nil, nil)
-	bad.Field("login", "My Login")
-	bad.Field("password", []interface{}{})
+	bad.Field("login", "", "My Login")
+	bad.Field("password", "", []interface{}{})
 
 	// An ugly record. The application didn't even add the field. We need to set flags to prune empty fields.
 	// 'fields': [...]
 	uglyRes := NewMockResponse([]byte{}, 200, &MockFlags{PruneEmptyFields: true})
 	ugly := uglyRes.AddRecord("Ugly Record", "login", "", nil, nil)
-	ugly.Field("login", "My Login")
-	ugly.Field("password", []interface{}{}) // this will be removed from the fields array.
+	ugly.Field("login", "", "My Login")
+	ugly.Field("password", "", []interface{}{}) // this will be removed from the fields array.
 
 	MockResponseQueue.AddMockResponse(goodRes)
 	MockResponseQueue.AddMockResponse(badRes)

@@ -122,7 +122,7 @@ Listed in priority order
 ## Adding more records or shared folders to the Application
 
 ### Via Web Vault
-Drag&Drop records into the shared folder or select from the record menu any of the options to CreateDuplicate/Move or create new records straight into the shared folder. As an alternative use: Secrets Manager > Application > Application Name > Folders & Records > Edit and use search field to add any folders or records then click Save.
+Drag&Drop records into the shared folder or select from the record menu any of the options to CreateDuplicate/Move or create new records straight into the shared folder. As an alternative use: **Secrets Manager > Application > Application Name > Folders & Records > Edit** and use search field to add any folders or records then click Save.
 
 ### Via Commander CLI
 ```bash

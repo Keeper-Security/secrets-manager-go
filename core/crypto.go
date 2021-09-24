@@ -301,7 +301,7 @@ func extractPublicKeyBytes(privateKeyDerBase64 interface{}) ([]byte, error) {
 	case string:
 		pkDerBase64 = v
 	case []byte:
-		pkDerBase64 = BytesToUrlSafeStr(v)
+		pkDerBase64 = BytesToBase64(v)
 	default:
 		return nil, errors.New("extracting public key DER bytes failed - PK must be string or byte slice")
 	}

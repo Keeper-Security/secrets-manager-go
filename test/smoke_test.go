@@ -1,6 +1,7 @@
 package test
 
 import (
+	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
@@ -16,40 +17,40 @@ func TestTheWorks(t *testing.T) {
 	rawJson := `
 	{
 		"hostname": "fake.keepersecurity.com",
-		"appKey": "9vVajcvJTGsa2Opc_jvhEiJLRKHtg2Rm4PAtUoP3URw",
-		"clientId": "rYebZN1TWiJagL-wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW-NNHDaq_8SQQ2sOYYT1Nhk5Ya_SkQ",
-		"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo",
-		"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU-_LBMQQGfJAycwOtx9djH0YEvBT-hRANCAASB1L44QodSzRaIOhF7f_2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
+		"appKey": "9vVajcvJTGsa2Opc/jvhEiJLRKHtg2Rm4PAtUoP3URw=",
+		"clientId": "Ae3589ktgynN6vvFtBwlsAbf0fHhXCcf7JqtKXK/3UCELujQuYuXvFFP08d2rb4aQ5Z4ozgD2yek9sjbWj7YoQ==",
+		"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo=",
+		"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
 	}
 				`
 	if f, err := os.CreateTemp("", ""); err == nil {
 		defer os.Remove(f.Name())
-		if err := os.WriteFile(f.Name(), []byte(rawJson), 0644); err == nil {
+		if err := ioutil.WriteFile(f.Name(), []byte(rawJson), 0644); err == nil {
 			sm := ksm.NewSecretsManagerFromConfig(ksm.NewFileKeyValueStorage(f.Name()), Ctx)
 
 			// --------------------------
 			// Add three records, 2 outside a folder, 1 inside folder
 			res1 := NewMockResponse([]byte{}, 200, nil)
 			one := res1.AddRecord("My Record 1", "", "", nil, nil)
-			one.Field("login", "My Login 1")
-			one.Field("password", "My Password 1")
-			one.CustomField("My Custom 1", "text", "custom1")
+			one.Field("login", "", "My Login 1")
+			one.Field("password", "", "My Password 1")
+			one.CustomField("text", "My Custom 1", "custom1")
 
 			// The frontend allows for custom field to not have unique names :(. The best way we
 			// can handle this is to set label and field type.
-			one.CustomField("My Custom 2", "text", "custom2")
-			one.CustomField("My Custom 2", "secret", "my secret")
+			one.CustomField("text", "My Custom 2", "custom2")
+			one.CustomField("secret", "My Custom 2", "my secret")
 
 			two := res1.AddRecord("My Record 2", "", "", nil, nil)
-			two.Field("login", "My Login 2")
-			two.Field("password", "My Password 2")
+			two.Field("login", "", "My Login 2")
+			two.Field("password", "", "My Password 2")
 			two.AddFile("My File 1", "", "", "", nil, 0)
 			two.AddFile("My File 2", "", "", "", nil, 0)
 
 			folder := res1.AddFolder("", nil)
 			three := folder.AddRecord("My Record 3", "", "", nil)
-			three.Field("login", "My Login 3")
-			three.Field("password", "My Password 3")
+			three.Field("login", "", "My Login 3")
+			three.Field("password", "", "My Password 3")
 
 			// --------------------------
 			res2 := NewMockResponse([]byte{}, 200, nil)
@@ -130,7 +131,7 @@ func TestTheWorks(t *testing.T) {
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						expectedMsg := "Save Error: Error: access_denied, message=You can't update because of spite"
+						expectedMsg := "POST Error: Error: access_denied, message=You can't update because of spite"
 						if msg, ok := r.(string); ok && strings.TrimSpace(msg) == expectedMsg {
 							t.Log("Received expected error message: " + msg)
 						} else {

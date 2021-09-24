@@ -41,8 +41,8 @@ func GetClientVersion(hardcode bool) string {
 
 var (
 	// Right now the client version is being hardcoded.
-	keeperSecretsManagerSdkClientId string            = "mg" + GetClientVersion(true)
-	keeperServerPublicKeys          map[string]string = map[string]string{
+	// keeperSecretsManagerSdkClientId string            = "mg" + GetClientVersion(true)
+	keeperServerPublicKeys map[string]string = map[string]string{
 		"7":  "BK9w6TZFxE6nFNbMfIpULCup2a8xc6w2tUTABjxny7yFmxW0dAEojwC6j6zb5nTlmb1dAx8nwo3qF7RPYGmloRM",
 		"8":  "BKnhy0obglZJK-igwthNLdknoSXRrGB-mvFRzyb_L-DKKefWjYdFD2888qN1ROczz4n3keYSfKz9Koj90Z6w_tQ",
 		"9":  "BAsPQdCpLIGXdWNLdAwx-3J5lNqUtKbaOMV56hUj8VzxE2USLHuHHuKDeno0ymJt-acxWV1xPlBfNUShhRTR77g",
