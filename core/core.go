@@ -69,18 +69,50 @@ func NewSecretsManagerFromFullSetup(token string, hostname string, verifySslCert
 		config = NewFileKeyValueStorage()
 	}
 
+	smToken, smHost := "", ""
+	token = strings.TrimSpace(token)
+	hostname = strings.TrimSpace(hostname)
+	if tokenParts := strings.Split(token, ":"); len(tokenParts) == 1 {
+		// token in legacy format without hostname prefix
+		if hostname == "" {
+			klog.Panicln("The hostname must be present in the token or provided as a parameter")
+		}
+		smToken = token
+		smHost = hostname
+	} else {
+		tokenPart0 := strings.TrimSpace(tokenParts[0])
+		tokenPart1 := strings.TrimSpace(tokenParts[1])
+		if len(tokenParts) != 2 || tokenPart0 == "" || tokenPart1 == "" {
+			klog.Warning("Expected token format 'Host:Base64Key', ex. US:c0rwWQDMm517A9xXjZundtVSWVZqRrFD3Qc6dStUfPg - got " + token)
+		}
+		if tokenHost, found := keeperServers[strings.ToUpper(tokenPart0)]; found {
+			// token contains abbreviation: ex. "US:c0rwWQDMm517A9xXjZundtVSWVZqRrFD3Qc6dStUfPg"
+			if hostname != "" && hostname != tokenHost {
+				klog.Warning(fmt.Sprintf("Replacing hostname '%s' with token based hostname '%s'", hostname, tokenHost))
+			}
+			smHost = tokenHost
+		} else {
+			// token contains url prefix: ex. "keepersecurity.com:c0rwWQDMm517A9xXjZundtVSWVZqRrFD3Qc6dStUfPg"
+			if hostname != "" && hostname != tokenPart0 {
+				klog.Warning(fmt.Sprintf("Replacing hostname '%s' with token based hostname '%s'", hostname, tokenHost))
+			}
+			smHost = tokenPart0
+		}
+		smToken = tokenPart1
+	}
+
 	// If the hostname or client key are set in the args, make sure they make their way into the config.
 	// They will override what is already in the config if they exist.
-	if cKey := strings.TrimSpace(token); cKey != "" {
+	if cKey := strings.TrimSpace(smToken); cKey != "" {
 		config.Set(KEY_CLIENT_KEY, cKey)
 	}
-	if srv := strings.TrimSpace(hostname); srv != "" {
+	if srv := strings.TrimSpace(smHost); srv != "" {
 		config.Set(KEY_HOSTNAME, srv)
 	}
 
 	sm := &SecretsManager{
-		Token:          token,
-		HostName:       hostname,
+		Token:          smToken,
+		HostName:       smHost,
 		VerifySslCerts: verifySslCerts,
 		Config:         config,
 	}
@@ -101,7 +133,7 @@ func (c *SecretsManager) SetCache(cache ICache) {
 }
 
 func (c *SecretsManager) init() {
-	klog.SetLogLevel(klog.InfoLevel)
+	// klog.SetLogLevel(klog.ErrorLevel)
 
 	// Accept the env var KSM_SKIP_VERIFY
 	if ksv := strings.TrimSpace(os.Getenv("KSM_SKIP_VERIFY")); ksv != "" {
@@ -623,6 +655,203 @@ func (c *SecretsManager) Save(record *Record) (err error) {
 	return err
 }
 
+type notationOptions struct {
+	url           string
+	uid           string
+	fieldDataType string
+	key           string
+	returnSingle  bool
+	index         int
+	dictKey       string
+}
+
+func (c *SecretsManager) parseNotation(notationUrl string) (nopts *notationOptions, err error) {
+	// ex. URL: <uid>/<field|custom_field|file>/<label|type>[INDEX][FIELD]
+	opts := notationOptions{url: notationUrl}
+	// If the URL starts with keeper:// we want to remove it.
+	if strings.HasPrefix(strings.ToLower(notationUrl), c.NotationPrefix()) {
+		errMisingPath := errors.New("keeper url missing information about the uid, field type, and field key")
+		if urlParts := strings.Split(notationUrl, "//"); len(urlParts) > 1 {
+			if notationUrl = urlParts[1]; notationUrl == "" {
+				return nil, errMisingPath
+			}
+		} else {
+			return nil, errMisingPath
+		}
+	}
+
+	if urlParts := strings.Split(notationUrl, "/"); len(urlParts) == 3 {
+		opts.uid = urlParts[0]
+		opts.fieldDataType = urlParts[1]
+		opts.key = urlParts[2]
+	} else {
+		return nil, fmt.Errorf("could not parse the notation '%s'. Is it valid? ", notationUrl)
+	}
+
+	if opts.uid == "" {
+		return nil, errors.New("record UID is missing in the keeper url")
+	}
+	if opts.fieldDataType == "" {
+		return nil, errors.New("field type is missing in the keeper url")
+	}
+	if opts.key == "" {
+		return nil, errors.New("field key is missing in the keeper url")
+	}
+
+	// By default we want to return a single value, which is the first item in the array
+	opts.returnSingle = true
+	opts.index = 0
+	opts.dictKey = ""
+
+	// Check it see if the key has a predicate, possibly with an index.
+	rePredicate := regexp.MustCompile(`\[([^\]]*)\]`)
+	rePredicateValue := regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
+	if predicates := rePredicate.FindAllStringSubmatch(opts.key, 3); len(predicates) > 0 {
+		if len(predicates) > 2 {
+			return nil, errors.New("the predicate of the notation appears to be invalid. Too many [], max 2 allowed. ")
+		}
+		if firstPredicate := predicates[0]; len(firstPredicate) > 1 {
+			value := firstPredicate[1]
+			// If the first predicate is an index into an array - fileRef[2]
+			if i, err := strconv.ParseInt(value, 10, 64); err == nil {
+				opts.index = int(i)
+			} else if matched := rePredicateValue.MatchString(value); matched {
+				// the first predicate is a key to a dictionary - name[first]
+				opts.dictKey = value
+			} else {
+				// else it was an array indicator (.../name[] or .../name) - return all the values
+				opts.returnSingle = false
+			}
+		}
+		if len(predicates) > 1 {
+			if !opts.returnSingle {
+				return nil, errors.New("if the second [] is a dictionary key, the first [] needs to have any index. ")
+			}
+			if secondPredicate := predicates[1]; len(secondPredicate) > 1 {
+				if value := secondPredicate[1]; len(value) > 0 {
+					// If the second predicate is an index into an array - fileRef[2]
+					if _, err := strconv.ParseInt(value, 10, 64); err == nil {
+						return nil, errors.New("the second [] can only by a key for the dictionary. It cannot be an index. ")
+					} else if matched := rePredicateValue.MatchString(value); matched {
+						// the second predicate is a key to a dictionary - name[first]
+						opts.dictKey = value
+					} else {
+						// else it was an array indicator (.../name[] or .../name) - return all the values
+						return nil, errors.New("the second [] must have key for the dictionary. Cannot be blank. ")
+					}
+				}
+			}
+		}
+
+		// Remove the predicate from the key, if it exists
+		if pos := strings.Index(opts.key, "["); pos >= 0 {
+			opts.key = opts.key[:pos]
+		}
+	}
+
+	return &opts, nil
+}
+
+func (c *SecretsManager) extractNotation(records []*Record, nopts *notationOptions) (fieldValue []interface{}, err error) {
+	fieldValue = []interface{}{}
+
+	matchingRecords := []*Record{}
+	for _, r := range records {
+		if r.Uid == nopts.uid {
+			matchingRecords = append(matchingRecords, r)
+		}
+	}
+
+	if len(matchingRecords) == 0 {
+		return fieldValue, errors.New("Could not find a record with the UID " + nopts.uid)
+	}
+	if len(matchingRecords) > 1 {
+		klog.Warning("Found more that one record with the same UID. Notation will inspect only the first record!")
+	}
+
+	record := matchingRecords[0]
+
+	var iValue []interface{}
+	if nopts.fieldDataType == "field" {
+		field := record.getStandardField(nopts.key)
+		if len(field) == 0 {
+			return fieldValue, fmt.Errorf("cannot find standard field %s", nopts.key)
+		}
+		iValue, _ = field["value"].([]interface{})
+		// fieldType, _ = field["type"].(string)
+	} else if nopts.fieldDataType == "custom_field" {
+		// iValue = record.GetCustomFieldsByLabel(nopts.key) // by default custom[] searches are by label
+		field := record.getCustomField(nopts.key)
+		if len(field) == 0 {
+			return fieldValue, fmt.Errorf("cannot find custom field %s", nopts.key)
+		}
+		iValue, _ = field["value"].([]interface{})
+		// fieldType, _ = field["type"].(string)
+	} else if nopts.fieldDataType == "file" {
+		file := record.FindFileByTitle(nopts.key)
+		if file == nil {
+			return fieldValue, fmt.Errorf("cannot find the file %s in record %s. ", nopts.key, nopts.uid)
+		}
+		fieldValue = append(fieldValue, file.GetFileData())
+		return fieldValue, nil
+	} else {
+		return fieldValue, fmt.Errorf("field type of %s is not valid. ", nopts.fieldDataType)
+	}
+
+	// Inflate the value if its part of list of types to inflate.
+	// This will request additional records	from secrets manager.
+	// if ftypes, found := inflateRefTypes[fieldType]; found {
+	// 	iValue := inflateFieldValue(iValue, ftypes)
+	// }
+
+	if nopts.returnSingle {
+		if len(iValue) == 0 {
+			return fieldValue, nil
+		}
+		if len(iValue) > nopts.index {
+			iVal := iValue[nopts.index]
+			retMap, mapOk := iVal.(map[string]interface{})
+			if mapOk && strings.TrimSpace(nopts.dictKey) != "" {
+				if val, ok := retMap[nopts.dictKey]; ok {
+					fieldValue = append(fieldValue, val)
+				} else {
+					return fieldValue, fmt.Errorf("cannot find the dictionary key %s in the value ", nopts.dictKey)
+				}
+			} else {
+				fieldValue = append(fieldValue, iVal)
+			}
+			if len(fieldValue) > 0 {
+				if strValue, ok := fieldValue[0].(string); ok {
+					fieldValue = []interface{}{strValue}
+				} else if mapValue, ok := fieldValue[0].(map[string]interface{}); ok {
+					if v, ok := mapValue["value"].([]interface{}); ok {
+						if len(v) > 0 {
+							fieldValue = []interface{}{fmt.Sprintf("%v", v[0])}
+						} else {
+							fieldValue = []interface{}{""}
+						}
+					}
+				}
+			}
+		} else {
+			return fieldValue, fmt.Errorf("the value at index %d does not exist for %s. ", nopts.index, nopts.url)
+		}
+	} else {
+		fieldValue = iValue
+	}
+
+	return fieldValue, nil
+}
+
+func (c *SecretsManager) FindNotation(records []*Record, url string) (fieldValue []interface{}, err error) {
+	nopts, err := c.parseNotation(url)
+	if err != nil {
+		return []interface{}{}, err
+	}
+
+	return c.extractNotation(records, nopts)
+}
+
 func (c *SecretsManager) GetNotation(url string) (fieldValue []interface{}, err error) {
 	/*
 		Simple string notation to get a value
@@ -645,167 +874,15 @@ func (c *SecretsManager) GetNotation(url string) (fieldValue []interface{}, err 
 			EG6KdJaaLG7esRZbMnfbFA/custom_field/phone[0]         => [{"number": "555-555...}]
 	*/
 
-	fieldValue = []interface{}{}
-	// If the URL starts with keeper:// we want to remove it.
-	if strings.HasPrefix(strings.ToLower(url), c.NotationPrefix()) {
-		errMisingPath := errors.New("keeper url missing information about the uid, field type, and field key")
-		if urlParts := strings.Split(url, "//"); len(urlParts) > 1 {
-			if url = urlParts[1]; url == "" {
-				return fieldValue, errMisingPath
-			}
-		} else {
-			return fieldValue, errMisingPath
-		}
-	}
-
-	uid, fieldDataType, key := "", "", ""
-	if urlParts := strings.Split(url, "/"); len(urlParts) == 3 {
-		uid = urlParts[0]
-		fieldDataType = urlParts[1]
-		key = urlParts[2]
-	} else {
-		return fieldValue, fmt.Errorf("could not parse the notation '%s'. Is it valid? ", url)
-	}
-
-	if uid == "" {
-		return fieldValue, errors.New("record UID is missing in the keeper url")
-	}
-	if fieldDataType == "" {
-		return fieldValue, errors.New("field type is missing in the keeper url")
-	}
-	if key == "" {
-		return fieldValue, errors.New("field key is missing in the keeper url")
-	}
-
-	// By default we want to return a single value, which is the first item in the array
-	returnSingle := true
-	index := 0
-	dictKey := ""
-
-	// Check it see if the key has a predicate, possibly with an index.
-	rePredicate := regexp.MustCompile(`\[([^\]]*)\]`)
-	rePredicateValue := regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
-	if predicates := rePredicate.FindAllStringSubmatch(key, 3); len(predicates) > 0 {
-		if len(predicates) > 2 {
-			return fieldValue, errors.New("the predicate of the notation appears to be invalid. Too many [], max 2 allowed. ")
-		}
-		if firstPredicate := predicates[0]; len(firstPredicate) > 1 {
-			value := firstPredicate[1]
-			// If the first predicate is an index into an array - fileRef[2]
-			if i, err := strconv.ParseInt(value, 10, 64); err == nil {
-				index = int(i)
-			} else if matched := rePredicateValue.MatchString(value); matched {
-				// the first predicate is a key to a dictionary - name[first]
-				dictKey = value
-			} else {
-				// else it was an array indicator (.../name[] or .../name) - return all the values
-				returnSingle = false
-			}
-		}
-		if len(predicates) > 1 {
-			if !returnSingle {
-				return fieldValue, errors.New("if the second [] is a dictionary key, the first [] needs to have any index. ")
-			}
-			if secondPredicate := predicates[1]; len(secondPredicate) > 1 {
-				if value := secondPredicate[1]; len(value) > 0 {
-					// If the second predicate is an index into an array - fileRef[2]
-					if _, err := strconv.ParseInt(value, 10, 64); err == nil {
-						return fieldValue, errors.New("the second [] can only by a key for the dictionary. It cannot be an index. ")
-					} else if matched := rePredicateValue.MatchString(value); matched {
-						// the second predicate is a key to a dictionary - name[first]
-						dictKey = value
-					} else {
-						// else it was an array indicator (.../name[] or .../name) - return all the values
-						return fieldValue, errors.New("the second [] must have key for the dictionary. Cannot be blank. ")
-					}
-				}
-			}
-		}
-
-		// Remove the predicate from the key, if it exists
-		if pos := strings.Index(key, "["); pos >= 0 {
-			key = key[:pos]
-		}
-	}
-
-	records, err := c.GetSecrets([]string{uid})
+	nopts, err := c.parseNotation(url)
 	if err != nil {
-		return fieldValue, err
-	}
-	if len(records) == 0 {
-		return fieldValue, errors.New("Could not find a record with the UID " + uid)
+		return []interface{}{}, err
 	}
 
-	record := records[0]
-
-	var iValue []interface{}
-	if fieldDataType == "field" {
-		field := record.getStandardField(key)
-		if len(field) == 0 {
-			return fieldValue, fmt.Errorf("cannot find standard field %s", key)
-		}
-		iValue, _ = field["value"].([]interface{})
-		// fieldType, _ = field["type"].(string)
-	} else if fieldDataType == "custom_field" {
-		// iValue = record.GetCustomFieldsByLabel(key) // by default custom[] searches are by label
-		field := record.getCustomField(key)
-		if len(field) == 0 {
-			return fieldValue, fmt.Errorf("cannot find custom field %s", key)
-		}
-		iValue, _ = field["value"].([]interface{})
-		// fieldType, _ = field["type"].(string)
-	} else if fieldDataType == "file" {
-		file := record.FindFileByTitle(key)
-		if file == nil {
-			return fieldValue, fmt.Errorf("cannot find the file %s in record %s. ", key, uid)
-		}
-		fieldValue = append(fieldValue, file.GetFileData())
-		return fieldValue, nil
-	} else {
-		return fieldValue, fmt.Errorf("field type of %s is not valid. ", fieldDataType)
+	records, err := c.GetSecrets([]string{nopts.uid})
+	if err != nil {
+		return []interface{}{}, err
 	}
 
-	// Inflate the value if its part of list of types to inflate.
-	// This will request additional records	from secrets manager.
-	// if ftypes, found := inflateRefTypes[fieldType]; found {
-	// 	iValue := inflateFieldValue(iValue, ftypes)
-	// }
-
-	if returnSingle {
-		if len(iValue) == 0 {
-			return fieldValue, nil
-		}
-		if len(iValue) > index {
-			iVal := iValue[index]
-			retMap, mapOk := iVal.(map[string]interface{})
-			if mapOk && strings.TrimSpace(dictKey) != "" {
-				if val, ok := retMap[dictKey]; ok {
-					fieldValue = append(fieldValue, val)
-				} else {
-					return fieldValue, fmt.Errorf("cannot find the dictionary key %s in the value ", dictKey)
-				}
-			} else {
-				fieldValue = append(fieldValue, iVal)
-			}
-			if len(fieldValue) > 0 {
-				if strValue, ok := fieldValue[0].(string); ok {
-					fieldValue = []interface{}{strValue}
-				} else if mapValue, ok := fieldValue[0].(map[string]interface{}); ok {
-					if v, ok := mapValue["value"].([]interface{}); ok {
-						if len(v) > 0 {
-							fieldValue = []interface{}{fmt.Sprintf("%v", v[0])}
-						} else {
-							fieldValue = []interface{}{""}
-						}
-					}
-				}
-			}
-		} else {
-			return fieldValue, fmt.Errorf("the value at index %d does not exist for %s. ", index, url)
-		}
-	} else {
-		fieldValue = iValue
-	}
-
-	return fieldValue, nil
+	return c.extractNotation(records, nopts)
 }

@@ -53,8 +53,11 @@ import ksm "github.com/keeper-security/secrets-manager-go/core"
 func main() {
 	// Establish connection
 	// One time secrets generated via Web Vault or Commander CLI
-	sm := ksm.NewSecretsManager()
-	sm.Token = "MmzGdls-rDG39vgqgFD1HL70h0_L_sKQOdI0qwXU3JI"
+	hostname := "keepersecurity.com"
+	token := "<One Time Access Token>"
+	verfySllCerts := true
+	config := ksm.NewFileKeyValueStorage("ksm-config.json")
+	sm := ksm.NewSecretsManagerFromFullSetup(token, hostname, verfySllCerts, config)
 	// One time tokens can be used only once - afterwards use the generated config file
 	// sm := ksm.NewSecretsManagerFromConfig(ksm.NewFileKeyValueStorage("client-config.json"))
 

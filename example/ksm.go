@@ -14,9 +14,11 @@ func main() {
 	klog.Info("Secrets Manager Started")
 
 	// One time tokens can be used only once - afterwards use the generated config.json
-	// hostname := "keepersecurity.com"
 	// token := "o3Uq8HlXyqAWJN7JVqFpSRSt1ELtvLduOwuGOAcaxLs"
-	// sm := ksm.NewSecretsManagerFromSettings(token, hostname, true)
+	// hostname := "keepersecurity.com"
+	// verfySllCerts := true
+	// config := ksm.NewFileKeyValueStorage("ksm-config.json")
+	// sm := ksm.NewSecretsManagerFromFullSetup(token, hostname, verfySllCerts, config)
 
 	sm := ksm.NewSecretsManagerFromConfig(ksm.NewFileKeyValueStorage("client-config.json"))
 
@@ -58,9 +60,9 @@ func main() {
 	}
 
 	klog.Println("Get only one record")
-	if JW_F1_R1, err := sm.GetSecrets([]string{"EG6KdJaaLG7esRZbMnfbFA"}); err == nil {
-		if len(JW_F1_R1) > 0 {
-			klog.Println(JW_F1_R1[0].RawJson)
+	if records, err := sm.GetSecrets([]string{"EG6KdJaaLG7esRZbMnfbFA"}); err == nil {
+		if len(records) > 0 {
+			klog.Println(records[0].RawJson)
 		} else {
 			klog.Println("record doesn't exist.")
 		}

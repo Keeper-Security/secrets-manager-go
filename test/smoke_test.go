@@ -23,8 +23,11 @@ func TestTheWorks(t *testing.T) {
 		"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
 	}
 				`
-	if f, err := os.CreateTemp("", ""); err == nil {
-		defer os.Remove(f.Name())
+	if f, err := ioutil.TempFile("", ""); err == nil {
+		defer func() {
+			f.Close()
+			os.Remove(f.Name())
+		}()
 		if err := ioutil.WriteFile(f.Name(), []byte(rawJson), 0644); err == nil {
 			sm := ksm.NewSecretsManagerFromConfig(ksm.NewFileKeyValueStorage(f.Name()), Ctx)
 

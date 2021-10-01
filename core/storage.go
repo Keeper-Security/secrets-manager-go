@@ -171,8 +171,9 @@ func NewMemoryKeyValueStorage(config ...interface{}) *memoryKeyValueStorage {
 		switch t := config[0].(type) {
 		case string:
 			jsonStr := t
-			if jsonBytes := UrlSafeStrToBytes(jsonStr); len(jsonBytes) > 2 {
-				jsonStr = string(jsonBytes)
+			// Decode if config json was provided as base64 string
+			if decodedJson := Base64ToString(jsonStr); len(decodedJson) > 2 {
+				jsonStr = decodedJson
 			}
 			iConfig = JsonToDict(jsonStr)
 			if len(iConfig) == 0 {

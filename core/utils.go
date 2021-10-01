@@ -84,6 +84,13 @@ func Base64ToBytes(text string) []byte {
 	return UrlSafeStrToBytes(text)
 }
 
+func Base64ToString(base64Text string) string {
+	if bytes := UrlSafeStrToBytes(base64Text); len(bytes) > 0 {
+		return BytesToString(bytes)
+	}
+	return ""
+}
+
 func GetRandomBytes(size int) ([]byte, error) {
 	data := make([]byte, size)
 	_, err := rand.Read(data)

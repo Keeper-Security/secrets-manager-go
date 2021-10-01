@@ -30,7 +30,7 @@ var (
 func init() {
 	klog = Logger{
 		logInstance: log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lmicroseconds),
-		logLevel:    InfoLevel,
+		logLevel:    WarningLevel,
 	}
 }
 
