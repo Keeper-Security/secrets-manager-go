@@ -371,3 +371,91 @@ func generateOTP(base32Key string, counter int64, digits int, algo string) (stri
 
 	return result, nil
 }
+
+// Generate password
+const AsciiLowercase string = "abcdefghijklmnopqrstuvwxyz"
+const AsciiUppercase string = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+const AsciiDigits string = "0123456789"
+const AsciiSpecialCharacters string = "\"!@#$%()+;<>=?[]{}^.,"
+
+func randomSample(sampleLength int, sampleString string) (string, error) {
+	if sampleLength > 0 && sampleString != "" {
+		letters := []rune(sampleString)
+		b := make([]rune, sampleLength)
+		sampleStringLen := new(big.Int).SetInt64(int64(len(sampleString)))
+		for i := range b {
+			// Int returns a uniform random value in [0, max)
+			r, err := rand.Int(rand.Reader, sampleStringLen)
+			if err != nil {
+				return "", fmt.Errorf("can't generate random value: %v, %v", i, err)
+			}
+			b[i] = letters[int(r.Int64())]
+		}
+		return string(b), nil
+	}
+	return "", nil
+}
+
+func shuffleString(text string) (string, error) {
+	result := ""
+	if text != "" {
+		letters := []rune(text)
+		for i := len(letters) - 1; i >= 1; i-- {
+			n := new(big.Int).SetInt64(int64(i + 1))
+			// Int returns a uniform random value in [0, max)
+			bj, err := rand.Int(rand.Reader, n) // 0 <= j <= i
+			if err != nil {
+				return "", fmt.Errorf("can't generate random value: %v, %v", i, err)
+			}
+			if j := int(bj.Int64()); i != j {
+				letters[i], letters[j] = letters[j], letters[i]
+			}
+		}
+		return string(letters), nil
+	}
+	return result, nil
+}
+
+func GeneratePassword(length, lowercase, uppercase, digits, specialCharacters int) (string, error) {
+	if length <= 0 {
+		length = 64
+	}
+	if lowercase == 0 && uppercase == 0 && digits == 0 && specialCharacters == 0 {
+		increment := length / 4
+		lastincrement := increment + (length % 4)
+		lowercase, uppercase, digits = increment, increment, increment
+		specialCharacters = lastincrement
+	}
+
+	passwordCharacters := ""
+	if lowercase > 0 {
+		if sample, err := randomSample(lowercase, AsciiLowercase); err == nil {
+			passwordCharacters += sample
+		} else {
+			return passwordCharacters, err
+		}
+	}
+	if uppercase > 0 {
+		if sample, err := randomSample(uppercase, AsciiUppercase); err == nil {
+			passwordCharacters += sample
+		} else {
+			return passwordCharacters, err
+		}
+	}
+	if digits > 0 {
+		if sample, err := randomSample(digits, AsciiDigits); err == nil {
+			passwordCharacters += sample
+		} else {
+			return passwordCharacters, err
+		}
+	}
+	if specialCharacters > 0 {
+		if sample, err := randomSample(specialCharacters, AsciiSpecialCharacters); err == nil {
+			passwordCharacters += sample
+		} else {
+			return passwordCharacters, err
+		}
+	}
+
+	return shuffleString(passwordCharacters)
+}
