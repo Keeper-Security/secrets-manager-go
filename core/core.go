@@ -66,7 +66,13 @@ func NewSecretsManagerFromSettings(token string, hostname string, verifySslCerts
 
 func NewSecretsManagerFromFullSetup(token string, hostname string, verifySslCerts bool, config IKeyValueStorage) *SecretsManager {
 	if config == nil {
-		config = NewFileKeyValueStorage()
+		// If the config is not defined and the KSM_CONFIG env var exists, get the config from the env var.
+		if ksmConfig := strings.TrimSpace(os.Getenv("KSM_CONFIG")); ksmConfig != "" {
+			config = NewMemoryKeyValueStorage(ksmConfig)
+			klog.Warning("Config initialised from env var KSM_CONFIG")
+		} else {
+			config = NewFileKeyValueStorage()
+		}
 	}
 
 	smToken, smHost := "", ""
@@ -146,8 +152,15 @@ func (c *SecretsManager) init() {
 	}
 
 	if c.Config == nil {
-		c.Config = NewFileKeyValueStorage()
+		// If the config is not defined and the KSM_CONFIG env var exists, get the config from the env var.
+		if ksmConfig := strings.TrimSpace(os.Getenv("KSM_CONFIG")); ksmConfig != "" {
+			c.Config = NewMemoryKeyValueStorage(ksmConfig)
+			klog.Warning("Config initialised from env var KSM_CONFIG")
+		} else {
+			c.Config = NewFileKeyValueStorage()
+		}
 	}
+
 	c.loadConfig()
 
 	// Make sure our public key id is set and pointing an existing key.
@@ -863,7 +876,7 @@ func (c *SecretsManager) GetNotation(url string) (fieldValue []interface{}, err 
 
 		Example:
 
-			EG6KdJaaLG7esRZbMnfbFA/field/password                => MyPasswprd
+			EG6KdJaaLG7esRZbMnfbFA/field/password                => MyPassword
 			EG6KdJaaLG7esRZbMnfbFA/field/password[0]             => MyPassword
 			EG6KdJaaLG7esRZbMnfbFA/field/password[]              => ["MyPassword"]
 			EG6KdJaaLG7esRZbMnfbFA/custom_field/name[first]      => John

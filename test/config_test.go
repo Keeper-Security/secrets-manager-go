@@ -406,3 +406,100 @@ func TestInMemoryBase64Config(t *testing.T) {
 		t.Error("found client key (one time token), should be missing.")
 	}
 }
+
+func TestInMemoryBase64ConfigViaEnv(t *testing.T) {
+	// JSON:
+	// {
+	//     "appKey": "MY APP KEY",
+	//     "clientId": "MY CLIENT ID",
+	//     "hostname": "fake.keepersecurity.com",
+	//     "privateKey": "MY PRIVATE KEY",
+	//     "serverPublicKeyId": "7"
+	// }
+	//
+	// The above JSON in base64:
+	// eyJhcHBLZXkiOiJNWSBBUFAgS0VZIiwiY2xpZW50SWQiOiJNWSBDTElFTlQgSUQiLCJob3N0bmFtZSI6ImZha2Uua2VlcGVyc2VjdXJpdHkuY29tIiwicHJpdmF0ZUtleSI6Ik1ZIFBSSVZBVEUgS0VZIiwic2VydmVyUHVibGljS2V5SWQiOiI3In0=
+
+	base64ConfigStr := "eyJhcHBLZXkiOiJNWSBBUFAgS0VZIiwiY2xpZW50SWQiOiJNWSBDTElFTlQgSUQiLCJob3N0bmFtZSI6" +
+		"ImZha2Uua2VlcGVyc2VjdXJpdHkuY29tIiwicHJpdmF0ZUtleSI6Ik1ZIFBSSVZBVEUgS0VZIiwic2Vy" +
+		"dmVyUHVibGljS2V5SWQiOiI3In0="
+
+		// Put the config into env var,
+	os.Setenv("KSM_CONFIG", base64ConfigStr)
+	secretsManager := ksm.NewSecretsManager()
+	dictConfig := secretsManager.Config.ReadStorage()
+
+	success := false
+	if key, ok := dictConfig[string(ksm.KEY_APP_KEY)]; ok {
+		if val, ok := key.(string); ok && val == "MY APP KEY" {
+			success = true
+		}
+	}
+	if !success {
+		t.Error("got incorrect app key")
+	}
+
+	success = false
+	if key, ok := dictConfig[string(ksm.KEY_CLIENT_ID)]; ok {
+		if val, ok := key.(string); ok && val == "MY CLIENT ID" {
+			success = true
+		}
+	}
+	if !success {
+		t.Error("got incorrect client id")
+	}
+
+	success = false
+	if key, ok := dictConfig[string(ksm.KEY_HOSTNAME)]; ok {
+		if val, ok := key.(string); ok && val == "fake.keepersecurity.com" {
+			success = true
+		}
+	}
+	if !success {
+		t.Error("got incorrect hostname")
+	}
+
+	success = false
+	if key, ok := dictConfig[string(ksm.KEY_PRIVATE_KEY)]; ok {
+		if val, ok := key.(string); ok && val == "MY PRIVATE KEY" {
+			success = true
+		}
+	}
+	if !success {
+		t.Error("got incorrect private key")
+	}
+
+	success = false
+	if key, ok := dictConfig[string(ksm.KEY_SERVER_PUBLIC_KEY_ID)]; ok {
+		if val, ok := key.(string); ok && val == "7" {
+			success = true
+		}
+	}
+	if !success {
+		t.Error("got incorrect server public key id")
+	}
+
+	// Pass in the config
+	secretsManager = ksm.NewSecretsManagerFromConfig(secretsManager.Config)
+	// not bound, client id and private key will be generated and overwrite existing
+	if secretsManager.Config.Get(ksm.KEY_CLIENT_ID) == "" {
+		t.Error("did not get a client id")
+	}
+	if secretsManager.Config.Get(ksm.KEY_PRIVATE_KEY) == "" {
+		t.Error("did not get a private key")
+	}
+	if secretsManager.Config.Get(ksm.KEY_APP_KEY) == "" {
+		t.Error("did not get an app key")
+	}
+	if secretsManager.Config.Get(ksm.KEY_HOSTNAME) == "" {
+		t.Error("did not get a hostname")
+	}
+	if secretsManager.Config.Get(ksm.KEY_SERVER_PUBLIC_KEY_ID) == "" {
+		t.Error("did not get a public key id")
+	}
+
+	// Client key (one time token) should be removed
+	if secretsManager.Config.Get(ksm.KEY_CLIENT_KEY) != "" {
+		t.Error("found client key (one time token), should be missing.")
+	}
+}
