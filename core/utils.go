@@ -230,17 +230,24 @@ type HOTP struct {
 	Counter int64  // Counter value (default: 0)
 }
 
+// TotpCode provides detailed info about the generated TOTP code
+type TotpCode struct {
+	Code     string // TOTP Code
+	TimeLeft int    // Time left in seconds (time before expiration)
+	Period   int    // Period in seconds
+}
+
 // Generates TOTP code from the URL and returns OTP as string, seconds remaining and any error encountered.
-func GenerateTotp(totpUrl string) (code string, seconds int, err error) {
+func GetTotpCode(totpUrl string) (*TotpCode, error) {
 	// https://github.com/google/google-authenticator/wiki/Key-Uri-Format
 	// ex. otpauth://totp/ACME%20Co:john.doe@email.com?secret=HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ&issuer=ACME%20Co&algorithm=SHA1&digits=6&period=30
 	u, err := url.Parse(totpUrl)
 	if err != nil || strings.ToLower(u.Scheme) != "otpauth" {
-		return "", 0, errors.New("invalid TOTP URL: " + totpUrl)
+		return nil, errors.New("invalid TOTP URL: " + totpUrl)
 	}
 	m, err := url.ParseQuery(u.RawQuery)
 	if err != nil {
-		return "", 0, errors.New("invalid TOTP URL query values: " + u.RawQuery)
+		return nil, errors.New("invalid TOTP URL query values: " + u.RawQuery)
 	}
 
 	secret := ""
@@ -274,7 +281,16 @@ func GenerateTotp(totpUrl string) (code string, seconds int, err error) {
 		Algorithm: algorithm,
 		Period:    period,
 	}
-	return totp.Generate()
+
+	if code, ttl, err := totp.Generate(); err == nil {
+		return &TotpCode{
+			Code:     code,
+			TimeLeft: ttl,
+			Period:   int(period),
+		}, nil
+	} else {
+		return nil, err
+	}
 }
 
 // Generates TOTP code and returns OTP as string, seconds remaining and any error encountered.
