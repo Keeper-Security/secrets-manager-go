@@ -90,6 +90,36 @@ func (p *UpdatePayload) UpdatePayloadFromJson(jsonData string) {
 	}
 }
 
+type CreatePayload struct {
+	ClientVersion string `json:"clientVersion"`
+	ClientId      string `json:"clientId"`
+	RecordUid     string `json:"recordUid"`
+	RecordKey     string `json:"recordKey"`
+	FolderUid     string `json:"folderUid"`
+	FolderKey     string `json:"folderKey"`
+	Data          string `json:"data"`
+}
+
+func (p *CreatePayload) CreatePayloadToJson() (string, error) {
+	if emp, err := json.Marshal(p); err == nil {
+		return string(emp), nil
+	} else {
+		klog.Error("Error serializing CreatePayload to JSON: " + err.Error())
+		return "", err
+	}
+}
+
+func (p *CreatePayload) CreatePayloadFromJson(jsonData string) {
+	bytes := []byte(jsonData)
+	res := CreatePayload{}
+
+	if err := json.Unmarshal(bytes, &res); err == nil {
+		*p = res
+	} else {
+		klog.Error("Error deserializing CreatePayload from JSON: " + err.Error())
+	}
+}
+
 type EncryptedPayload struct {
 	EncryptedPayload []byte
 	Signature        []byte

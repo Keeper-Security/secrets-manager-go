@@ -8,6 +8,11 @@ import (
 	ksm "github.com/keeper-security/secrets-manager-go/core"
 )
 
+const (
+	fakeNotationAppKey     string = "9vVajcvJTGsa2Opc/jvhEiJLRKHtg2Rm4PAtUoP3URw="
+	fakeNotationPrivateKey string = "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
+)
+
 func generateMockresponse(uid string) *MockResponse {
 	res1 := NewMockResponse([]byte{}, 200, nil)
 	one := res1.AddRecord("My Record 1", "", uid, nil, nil)
@@ -39,14 +44,13 @@ func TestGetNotation(t *testing.T) {
 	defer ResetMockResponseQueue()
 
 	rawJson := `
-	{
-		"hostname": "fake.keepersecurity.com",
-		"appKey": "9vVajcvJTGsa2Opc/jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-		"clientId": "rYebZN1TWiJagL+wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW+NNHDaq/8SQQ2sOYYT1Nhk5Ya/SkQ==",
-		"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo=",
-		"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
-	}
-				`
+{
+	"hostname": "fake.keepersecurity.com",
+	"appKey": "` + fakeNotationAppKey + `",
+	"clientId": "CLIENT_ID",
+	"clientKey": "CLIENT_KEY",
+	"privateKey": "` + fakeNotationPrivateKey + `"
+}`
 	config := ksm.NewMemoryKeyValueStorage(rawJson)
 	sm := ksm.NewSecretsManagerFromConfig(config, Ctx)
 
@@ -224,14 +228,13 @@ func TestSecretsManagerCustomField(t *testing.T) {
 	// If no custom fields are added via Secrets Manager, the JSON will be missing the "custom" key.
 	// Make a record that has no custom fields and see if stuff still works.
 	rawJson := `
-	{
-		"hostname": "fake.keepersecurity.com",
-		"appKey": "9vVajcvJTGsa2Opc/jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-		"clientId": "rYebZN1TWiJagL+wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW+NNHDaq/8SQQ2sOYYT1Nhk5Ya/SkQ==",
-		"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo=",
-		"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
-	}
-				`
+{
+	"hostname": "fake.keepersecurity.com",
+	"appKey": "` + fakeNotationAppKey + `",
+	"clientId": "CLIENT_ID",
+	"clientKey": "CLIENT_KEY",
+	"privateKey": "` + fakeNotationPrivateKey + `"
+}`
 	config := ksm.NewMemoryKeyValueStorage(rawJson)
 	sm := ksm.NewSecretsManagerFromConfig(config, Ctx)
 

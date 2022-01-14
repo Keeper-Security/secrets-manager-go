@@ -112,6 +112,29 @@ func GenerateUid() string {
 	return BytesToUrlSafeStr(uid)
 }
 
+func GenerateUidWithLength(bitLength int) string {
+	if bitLength < 1 {
+		return ""
+	}
+
+	bitmask := byte(0xFF)
+	byteLength := bitLength / 8
+	if bitLength%8 > 0 {
+		byteLength++
+		bitmask = byte(0x00)
+		for i := 0; i < bitLength%8; i++ {
+			bitmask |= (byte(0x01) << (7 - i))
+		}
+	}
+
+	uid, _ := GetRandomBytes(byteLength)
+	if bitmask != byte(0xFF) {
+		uid = append(uid[:len(uid)-1], uid[len(uid)-1]&bitmask)
+	}
+
+	return BytesToUrlSafeStr(uid)
+}
+
 // UrlSafeSha256FromString generates URL safe encoded SHA256 sum of data in URL safe base64 encoded string
 func UrlSafeSha256FromString(text string) string {
 	if text == "" {
@@ -210,6 +233,65 @@ func PathExists(path string) (bool, error) {
 	} else {
 		return false, err
 	}
+}
+
+func CloneByteSlice(src []byte) []byte {
+	if src == nil {
+		return nil
+	} else {
+		dst := make([]byte, len(src))
+		copy(dst, src)
+		return dst
+	}
+}
+
+type CopyableMap map[string]interface{}
+type CopyableSlice []interface{}
+
+// DeepCopy will create a deep copy of this map.
+// The depth of this copy is all inclusive.
+// Both maps and slices will be considered when making the copy.
+func (m CopyableMap) DeepCopy() map[string]interface{} {
+	result := map[string]interface{}{}
+
+	for k, v := range m {
+		if mapvalue, isMap := v.(map[string]interface{}); isMap {
+			result[k] = CopyableMap(mapvalue).DeepCopy()
+			continue
+		}
+
+		if slicevalue, isSlice := v.([]interface{}); isSlice {
+			result[k] = CopyableSlice(slicevalue).DeepCopy()
+			continue
+		}
+
+		result[k] = v
+	}
+
+	return result
+}
+
+// DeepCopy will create a deep copy of this slice.
+// The depth of this copy is all inclusive.
+// Both maps and slices will be considered when making the copy.
+func (s CopyableSlice) DeepCopy() []interface{} {
+	result := []interface{}{}
+
+	for _, v := range s {
+		if mapvalue, isMap := v.(map[string]interface{}); isMap {
+			result = append(result, CopyableMap(mapvalue).DeepCopy())
+			continue
+		}
+
+		if slicevalue, isSlice := v.([]interface{}); isSlice {
+			result = append(result, CopyableSlice(slicevalue).DeepCopy())
+			continue
+		}
+
+		result = append(result, v)
+	}
+
+	return result
 }
 
 // Generate TOTP/HOTP codes - RFC 6238/RFC 4226

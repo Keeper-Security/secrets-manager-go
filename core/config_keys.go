@@ -6,11 +6,12 @@ const (
 	KEY_URL                  ConfigKey = "url" // base URL for the Secrets Manager service
 	KEY_SERVER_PUBLIC_KEY_ID ConfigKey = "serverPublicKeyId"
 	KEY_CLIENT_ID            ConfigKey = "clientId"
-	KEY_CLIENT_KEY           ConfigKey = "clientKey"  // The key that is used to identify the client before public key
-	KEY_APP_KEY              ConfigKey = "appKey"     // The application key with which all secrets are encrypted
-	KEY_PRIVATE_KEY          ConfigKey = "privateKey" // The client's private key
-	KEY_PUBLIC_KEY           ConfigKey = "publicKey"  // The client's public key
-	KEY_HOSTNAME             ConfigKey = "hostname"   // base hostname for the Secrets Manager service
+	KEY_CLIENT_KEY           ConfigKey = "clientKey"         // The key that is used to identify the client before public key
+	KEY_APP_KEY              ConfigKey = "appKey"            // The application key with which all secrets are encrypted
+	KEY_OWNER_PUBLIC_KEY     ConfigKey = "appOwnerPublicKey" // The application owner public key, to create records
+	KEY_PRIVATE_KEY          ConfigKey = "privateKey"        // The client's private key
+	KEY_PUBLIC_KEY           ConfigKey = "publicKey"         // The client's public key
+	KEY_HOSTNAME             ConfigKey = "hostname"          // base hostname for the Secrets Manager service
 )
 
 func GetConfigKey(value string) ConfigKey {
@@ -25,6 +26,8 @@ func GetConfigKey(value string) ConfigKey {
 		return KEY_CLIENT_KEY
 	case string(KEY_APP_KEY):
 		return KEY_APP_KEY
+	case string(KEY_OWNER_PUBLIC_KEY):
+		return KEY_OWNER_PUBLIC_KEY
 	case string(KEY_PRIVATE_KEY):
 		return KEY_PRIVATE_KEY
 	case string(KEY_PUBLIC_KEY):

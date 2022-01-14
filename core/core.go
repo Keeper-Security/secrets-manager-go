@@ -89,16 +89,16 @@ func NewSecretsManagerFromFullSetup(token string, hostname string, verifySslCert
 		tokenPart0 := strings.TrimSpace(tokenParts[0])
 		tokenPart1 := strings.TrimSpace(tokenParts[1])
 		if len(tokenParts) != 2 || tokenPart0 == "" || tokenPart1 == "" {
-			klog.Warning("Expected token format 'Host:Base64Key', ex. US:c0rwWQDMm517A9xXjZundtVSWVZqRrFD3Qc6dStUfPg - got " + token)
+			klog.Warning("Expected token format 'Host:Base64Key', ex. US:ONE_TIME_TOKEN_BASE64 - got " + token)
 		}
 		if tokenHost, found := keeperServers[strings.ToUpper(tokenPart0)]; found {
-			// token contains abbreviation: ex. "US:c0rwWQDMm517A9xXjZundtVSWVZqRrFD3Qc6dStUfPg"
+			// token contains abbreviation: ex. "US:ONE_TIME_TOKEN"
 			if hostname != "" && hostname != tokenHost {
 				klog.Warning(fmt.Sprintf("Replacing hostname '%s' with token based hostname '%s'", hostname, tokenHost))
 			}
 			smHost = tokenHost
 		} else {
-			// token contains url prefix: ex. "keepersecurity.com:c0rwWQDMm517A9xXjZundtVSWVZqRrFD3Qc6dStUfPg"
+			// token contains url prefix: ex. "ksm.company.com:ONE_TIME_TOKEN"
 			if hostname != "" && hostname != tokenPart0 {
 				klog.Warning(fmt.Sprintf("Replacing hostname '%s' with token based hostname '%s'", hostname, tokenHost))
 			}
@@ -302,6 +302,10 @@ func (c *SecretsManager) encryptAndSignPayload(transmissionKey *TransmissionKey,
 		if payloadJsonStr, err = v.UpdatePayloadToJson(); err != nil {
 			return nil, errors.New("error converting update payload to JSON: " + err.Error())
 		}
+	case *CreatePayload:
+		if payloadJsonStr, err = v.CreatePayloadToJson(); err != nil {
+			return nil, errors.New("error converting create payload to JSON: " + err.Error())
+		}
 	default:
 		return nil, fmt.Errorf("error converting payload - unknown payload type for '%v'", v)
 	}
@@ -372,7 +376,55 @@ func (c *SecretsManager) prepareUpdatePayload(record *Record) (res *UpdatePayloa
 	// rawJson := DictToJson(record.RecordDict)
 	rawJsonBytes := StringToBytes(record.RawJson)
 	if encryptedRawJsonBytes, err := EncryptAesGcm(rawJsonBytes, record.RecordKeyBytes); err == nil {
-		payload.Data = BytesToBase64(encryptedRawJsonBytes)
+		payload.Data = BytesToUrlSafeStr(encryptedRawJsonBytes)
+	} else {
+		return nil, err
+	}
+
+	return &payload, nil
+}
+
+func (c *SecretsManager) prepareCreatePayload(record *Record) (res *CreatePayload, err error) {
+	payload := CreatePayload{
+		ClientVersion: keeperSecretsManagerClientId,
+		ClientId:      c.Config.Get(KEY_CLIENT_ID),
+	}
+
+	ownerPublicKey := strings.TrimSpace(c.Config.Get(KEY_OWNER_PUBLIC_KEY))
+	if ownerPublicKey == "" {
+		return nil, fmt.Errorf("unable to create record - application owner public key is missing from the configuration")
+	}
+	if strings.TrimSpace(payload.ClientId) == "" {
+		return nil, fmt.Errorf("unable to create record - client Id is missing from the configuration")
+	}
+	if record == nil {
+		return nil, fmt.Errorf("unable to create record - missing record data")
+	}
+	if strings.TrimSpace(record.folderUid) == "" {
+		return nil, fmt.Errorf("unable to create record - missing folder UID")
+	}
+	if len(record.folderKeyBytes) == 0 {
+		return nil, fmt.Errorf("unable to create record - folder key for '%s' not found", record.folderUid)
+	}
+
+	payload.RecordUid = record.Uid
+	payload.FolderUid = record.folderUid
+
+	rawJsonBytes := StringToBytes(record.RawJson)
+	if encryptedRawJsonBytes, err := EncryptAesGcm(rawJsonBytes, record.RecordKeyBytes); err == nil {
+		payload.Data = BytesToUrlSafeStr(encryptedRawJsonBytes)
+	} else {
+		return nil, err
+	}
+
+	if encryptedFolderKey, err := EncryptAesGcm(record.RecordKeyBytes, record.folderKeyBytes); err == nil {
+		payload.FolderKey = BytesToBase64(encryptedFolderKey)
+	} else {
+		return nil, err
+	}
+
+	if encryptedRecordKey, err := PublicEncrypt(record.RecordKeyBytes, Base64ToBytes(ownerPublicKey), nil); err == nil {
+		payload.RecordKey = BytesToBase64(encryptedRecordKey)
 	} else {
 		return nil, err
 	}
@@ -591,6 +643,11 @@ func (c *SecretsManager) fetchAndDecryptSecrets(recordFilter []string) (records 
 		} else {
 			klog.Error("failed to decrypt APP_KEY")
 		}
+		if ownerPubKey, found := decryptedResponseDict[string(KEY_OWNER_PUBLIC_KEY)]; found && ownerPubKey != nil {
+			if appOwnerPublicKey := strings.TrimSpace(fmt.Sprintf("%v", ownerPubKey)); appOwnerPublicKey != "" {
+				c.Config.Set(KEY_OWNER_PUBLIC_KEY, appOwnerPublicKey)
+			}
+		}
 	} else {
 		secretKey = Base64ToBytes(c.Config.Get(KEY_APP_KEY))
 		if len(secretKey) == 0 {
@@ -607,7 +664,7 @@ func (c *SecretsManager) fetchAndDecryptSecrets(recordFilter []string) (records 
 		if reflect.TypeOf(recordsResp) == reflect.TypeOf(emptyInterfaceSlice) {
 			for _, r := range recordsResp.([]interface{}) {
 				recordCount++
-				record := NewRecordFromJson(r.(map[string]interface{}), secretKey)
+				record := NewRecordFromJson(r.(map[string]interface{}), secretKey, "")
 				records = append(records, record)
 			}
 		} else {
@@ -666,6 +723,16 @@ func (c *SecretsManager) Save(record *Record) (err error) {
 
 	_, err = c.PostQuery("update_secret", payload)
 	return err
+}
+
+func (c *SecretsManager) CreateSecret(record *Record) (recordUid string, err error) {
+	payload, err := c.prepareCreatePayload(record)
+	if err != nil {
+		return "", err
+	}
+
+	_, err = c.PostQuery("create_secret", payload)
+	return payload.RecordUid, err
 }
 
 type notationOptions struct {
@@ -876,15 +943,15 @@ func (c *SecretsManager) GetNotation(url string) (fieldValue []interface{}, err 
 
 		Example:
 
-			EG6KdJaaLG7esRZbMnfbFA/field/password                => MyPassword
-			EG6KdJaaLG7esRZbMnfbFA/field/password[0]             => MyPassword
-			EG6KdJaaLG7esRZbMnfbFA/field/password[]              => ["MyPassword"]
-			EG6KdJaaLG7esRZbMnfbFA/custom_field/name[first]      => John
-			EG6KdJaaLG7esRZbMnfbFA/custom_field/name[last]       => Smitht
-			EG6KdJaaLG7esRZbMnfbFA/custom_field/phone[0][number] => "555-5555555"
-			EG6KdJaaLG7esRZbMnfbFA/custom_field/phone[1][number] => "777-7777777"
-			EG6KdJaaLG7esRZbMnfbFA/custom_field/phone[]          => [{"number": "555-555...}, { "number": "777.....}]
-			EG6KdJaaLG7esRZbMnfbFA/custom_field/phone[0]         => [{"number": "555-555...}]
+			RECORD_UID/field/password                => MyPassword
+			RECORD_UID/field/password[0]             => MyPassword
+			RECORD_UID/field/password[]              => ["MyPassword"]
+			RECORD_UID/custom_field/name[first]      => John
+			RECORD_UID/custom_field/name[last]       => Smitht
+			RECORD_UID/custom_field/phone[0][number] => "555-5555555"
+			RECORD_UID/custom_field/phone[1][number] => "777-7777777"
+			RECORD_UID/custom_field/phone[]          => [{"number": "555-555...}, { "number": "777.....}]
+			RECORD_UID/custom_field/phone[0]         => [{"number": "555-555...}]
 	*/
 
 	nopts, err := c.parseNotation(url)

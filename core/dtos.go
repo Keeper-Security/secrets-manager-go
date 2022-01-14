@@ -28,13 +28,19 @@ const (
 
 type Record struct {
 	RecordKeyBytes []byte
-	Files          []*KeeperFile
 	Uid            string
+	folderKeyBytes []byte
+	folderUid      string
+	Files          []*KeeperFile
 	Revision       int64
 	IsEditable     bool
 	recordType     string
 	RawJson        string
 	RecordDict     map[string]interface{}
+}
+
+func (r *Record) FolderUid() string {
+	return r.folderUid
 }
 
 func (r *Record) Password() string {
@@ -341,8 +347,15 @@ func (r *Record) GetCustomFieldValueByLabel(fieldLabel string) string {
 	return result
 }
 
-func NewRecordFromJson(recordDict map[string]interface{}, secretKey []byte) *Record {
+func NewRecordFromJson(recordDict map[string]interface{}, secretKey []byte, folderUid string) *Record {
 	record := Record{}
+
+	// if folderUid is present then secretKey is the folder key
+	// if folderUid is empty then record is directly shared to the app and secretKey is the app key
+	if strings.TrimSpace(folderUid) != "" {
+		record.folderUid = folderUid
+		record.folderKeyBytes = secretKey
+	}
 
 	if uid, ok := recordDict["recordUid"]; ok {
 		record.Uid = strings.TrimSpace(uid.(string))
@@ -547,6 +560,145 @@ func (r *Record) SetCustomFieldValue(fieldType string, value interface{}) error 
 	return nil
 }
 
+func (r *Record) CanClone() bool {
+	if strings.TrimSpace(r.folderUid) != "" && len(r.folderKeyBytes) > 0 {
+		return true
+	} else {
+		return false
+	}
+}
+
+func findTemplateRecord(templateRecordUid string, records []*Record) (*Record, error) {
+	var templateRecord *Record = nil
+
+	for _, r := range records {
+		if r.Uid == templateRecordUid {
+			templateRecord = r
+			if strings.TrimSpace(r.folderUid) != "" && len(r.folderKeyBytes) > 0 {
+				break
+			}
+		}
+	}
+
+	if templateRecord == nil {
+		return nil, fmt.Errorf("cannot find template record '%s' in record", templateRecordUid)
+	}
+
+	// Records shared directly to the application cannot be used as template records
+	// only records in a shared folder (shared to the application) should be used as templates
+	if strings.TrimSpace(templateRecord.folderUid) == "" || len(templateRecord.folderKeyBytes) == 0 {
+		return nil, fmt.Errorf("found matching template record %s which is not in a shared folder", templateRecordUid)
+	}
+
+	return templateRecord, nil
+}
+
+// NewRecordClone returns a deep copy of the template object with new UID and RecordKeyBytes
+// returns error if template record is not found
+func NewRecordClone(templateRecordUid string, records []*Record) (*Record, error) {
+	templateRecord, err := findTemplateRecord(templateRecordUid, records)
+	if err != nil {
+		return nil, err
+	}
+
+	recordKeyBytes, _ := GetRandomBytes(32)
+	folderKeyBytesCopy := make([]byte, len(templateRecord.folderKeyBytes))
+	copy(folderKeyBytesCopy, templateRecord.folderKeyBytes)
+	recordDictCopy := CopyableMap(templateRecord.RecordDict).DeepCopy()
+
+	filesCopy := []*KeeperFile{}
+	for _, f := range templateRecord.Files {
+		filesCopy = append(filesCopy, f.DeepCopy())
+	}
+
+	rec := &Record{
+		RecordKeyBytes: recordKeyBytes,
+		Uid:            GenerateUid(),
+		folderKeyBytes: folderKeyBytesCopy,
+		folderUid:      templateRecord.folderUid,
+		Files:          filesCopy,
+		Revision:       templateRecord.Revision,
+		IsEditable:     templateRecord.IsEditable,
+		recordType:     templateRecord.recordType,
+		RawJson:        templateRecord.RawJson,
+		RecordDict:     recordDictCopy,
+	}
+
+	return rec, nil
+}
+
+// NewRecord returns a new empty record of the same type as template object but with new UID and RecordKeyBytes
+// returns error if template record is not found
+func NewRecord(templateRecordUid string, records []*Record) (*Record, error) {
+	templateRecord, err := findTemplateRecord(templateRecordUid, records)
+	if err != nil {
+		return nil, err
+	}
+
+	recordKeyBytes, _ := GetRandomBytes(32)
+	folderKeyBytesCopy := make([]byte, len(templateRecord.folderKeyBytes))
+	copy(folderKeyBytesCopy, templateRecord.folderKeyBytes)
+
+	// copy and preserve known keys but clear all other values except record type
+	// drop custom[] and any other unknown top-level keys
+	recordDictCopy := CopyableMap(templateRecord.RecordDict).DeepCopy()
+	for key, val := range recordDictCopy {
+		switch key {
+		case "type":
+			continue
+		case "title", "notes":
+			recordDictCopy[key] = ""
+		case "custom":
+			delete(recordDictCopy, key)
+		case "fields":
+			if fslice, ok := val.([]interface{}); ok {
+				for _, fs := range fslice {
+					if fmap, ok := fs.(map[string]interface{}); ok {
+						for fkey := range fmap {
+							// preserve field type, clear label and value, drop everything else
+							switch fkey {
+							case "type":
+								continue
+							case "label":
+								fmap[fkey] = ""
+							case "value":
+								fmap[fkey] = []interface{}{}
+							default:
+								klog.Warning("create new record - removing field type property", key)
+								delete(fmap, key)
+							}
+						}
+					} else {
+						klog.Warning("create new record - fields type is not in the expected format and is removed")
+					}
+				}
+			} else {
+				klog.Warning("create new record - fields[] is not in the expected format and is replaced")
+				recordDictCopy[key] = []interface{}{}
+			}
+		default:
+			klog.Warning("create new record - removing unknown record type property", key)
+			delete(recordDictCopy, key)
+		}
+	}
+	rawJson := DictToJson(recordDictCopy)
+
+	rec := &Record{
+		RecordKeyBytes: recordKeyBytes,
+		Uid:            GenerateUid(),
+		folderKeyBytes: folderKeyBytesCopy,
+		folderUid:      templateRecord.folderUid,
+		Files:          []*KeeperFile{},
+		Revision:       templateRecord.Revision,
+		IsEditable:     templateRecord.IsEditable,
+		recordType:     templateRecord.recordType,
+		RawJson:        rawJson,
+		RecordDict:     recordDictCopy,
+	}
+
+	return rec, nil
+}
+
 func (r *Record) Print() {
 	fmt.Println("===")
 	fmt.Println("Title: " + r.Title())
@@ -630,7 +782,7 @@ func (f *Folder) Records() []*Record {
 	records := []*Record{}
 	if f.folderRecords != nil {
 		for _, r := range f.folderRecords {
-			if record := NewRecordFromJson(r, f.folderKey); record.Uid != "" {
+			if record := NewRecordFromJson(r, f.folderKey, f.uid); record.Uid != "" {
 				records = append(records, record)
 			} else {
 				klog.Error("error parsing folder record: ", r)
@@ -686,6 +838,22 @@ func NewKeeperFileFromJson(fileDict map[string]interface{}, recordKeyBytes []byt
 	}
 
 	return f
+}
+
+func (f *KeeperFile) DeepCopy() *KeeperFile {
+	return &KeeperFile{
+		FileKey:        f.FileKey,
+		metaDict:       CopyableMap(f.metaDict).DeepCopy(),
+		FileData:       CloneByteSlice(f.FileData),
+		Uid:            f.Uid,
+		Type:           f.Type,
+		Title:          f.Title,
+		Name:           f.Name,
+		LastModified:   f.LastModified,
+		Size:           f.Size,
+		F:              CopyableMap(f.F).DeepCopy(),
+		RecordKeyBytes: CloneByteSlice(f.RecordKeyBytes),
+	}
 }
 
 func (f *KeeperFile) DecryptFileKey() []byte {

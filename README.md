@@ -1,4 +1,4 @@
-# Secrets Manager Go SDK
+# Secrets Management Go SDK
 
 ![Go](https://github.com/keeper-security/secrets-manager-go/actions/workflows/test.go.yml/badge.svg)
 

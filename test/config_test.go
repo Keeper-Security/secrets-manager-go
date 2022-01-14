@@ -9,6 +9,24 @@ import (
 	ksm "github.com/keeper-security/secrets-manager-go/core"
 )
 
+const (
+	fakeJsonConfigStr string = `
+{
+    "appKey": "MY APP KEY",
+    "clientId": "MY CLIENT ID",
+    "hostname": "fake.keepersecurity.com",
+    "privateKey": "MY PRIVATE KEY",
+    "serverPublicKeyId": "7"
+}
+`
+
+	// The above JSON in base64:
+	// eyJhcHBLZXkiOiJNWSBBUFAgS0VZIiwiY2xpZW50SWQiOiJNWSBDTElFTlQgSUQiLCJob3N0bmFtZSI6ImZha2Uua2VlcGVyc2VjdXJpdHkuY29tIiwicHJpdmF0ZUtleSI6Ik1ZIFBSSVZBVEUgS0VZIiwic2VydmVyUHVibGljS2V5SWQiOiI3In0=
+	fakeBase64ConfigStr string = "eyJhcHBLZXkiOiJNWSBBUFAgS0VZIiwiY2xpZW50SWQiOiJNWSBDTElFTlQgSUQiLCJob3N0bmFtZSI6" +
+		"ImZha2Uua2VlcGVyc2VjdXJpdHkuY29tIiwicHJpdmF0ZUtleSI6Ik1ZIFBSSVZBVEUgS0VZIiwic2Vy" +
+		"dmVyUHVibGljS2V5SWQiOiI3In0="
+)
+
 func TestMissingConfig(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -62,21 +80,12 @@ func TestDefaultLoadFromJson(t *testing.T) {
 	defer os.RemoveAll(tempDirName)
 
 	if err := os.Chdir(tempDirName); err == nil {
-		rawJson := `
-{
-	"hostname": "fake.keepersecurity.com",
-	"appKey": "9vVajcvJTGsa2Opc/jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-	"clientId": "rYebZN1TWiJagL+wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW+NNHDaq/8SQQ2sOYYT1Nhk5Ya/SkQ==",
-	"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI",
-	"serverPublicKeyId": "7"
-}
-		`
-		if err := ioutil.WriteFile(defaultConfigName, []byte(rawJson), 0644); err == nil {
+		if err := ioutil.WriteFile(defaultConfigName, []byte(fakeJsonConfigStr), 0644); err == nil {
 			sm := ksm.NewSecretsManager()
 			if sm.Config.Get(ksm.KEY_HOSTNAME) != "fake.keepersecurity.com" {
 				t.Error("did not get correct hostname")
 			}
-			if sm.Config.Get(ksm.KEY_APP_KEY) != "9vVajcvJTGsa2Opc/jvhEiJLRKHtg2Rm4PAtUoP3URw=" {
+			if sm.Config.Get(ksm.KEY_APP_KEY) != "MY APP KEY" {
 				t.Error("did not get correct app key")
 			}
 		} else {
@@ -107,19 +116,10 @@ func TestOverwriteViaArgs(t *testing.T) {
 	defer os.RemoveAll(tempDirName)
 
 	if err := os.Chdir(tempDirName); err == nil {
-		rawJson := `
-{
-	"appKey": "9vVajcvJTGsa2Opc/jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-	"clientId": "rYebZN1TWiJagL+wHxYboe1vPje10zx1JCJR2bpGILlhIRg7HO26C7HnW+NNHDaq/8SQQ2sOYYT1Nhk5Ya/SkQ==",
-	"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo=",
-	"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI",
-	"serverPublicKeyId": "7"
-}
-		`
-		if err := ioutil.WriteFile(defaultConfigName, []byte(rawJson), 0644); err == nil {
+		if err := ioutil.WriteFile(defaultConfigName, []byte(fakeJsonConfigStr), 0644); err == nil {
 			// Pass in the client key and hostname
-			sm := ksm.NewSecretsManagerFromSettings("ABC123", "localhost", true)
-			if sm.Config.Get(ksm.KEY_HOSTNAME) != "localhost" {
+			sm := ksm.NewSecretsManagerFromSettings("ABC123", "fake.keepersecurity.com", true)
+			if sm.Config.Get(ksm.KEY_HOSTNAME) != "fake.keepersecurity.com" {
 				t.Error("did not get correct hostname")
 			}
 			if sm.Config.Get(ksm.KEY_CLIENT_KEY) != "" {
@@ -134,17 +134,9 @@ func TestOverwriteViaArgs(t *testing.T) {
 }
 
 func TestOnetimeTokenFormatsAbbrev(t *testing.T) {
-	b64ConfigStr := "eyAgICAgImFwcEtleSI6ICI4S3gyNVN2dGtSU3NFWUl1cjdtSEt0THFBTkZOQjdBWlJhOWNxaTJQU1FFPSIsICAgICAiY2x" +
-		"pZW50SWQiOiAiNEgvVTVKNkRjZktMWUJJSUFWNVl3RUZHNG4zWGhpRHZOdG9Qa21TTUlUZVROWnNhL0VKMHpUYnBBQ1J0bU" +
-		"5VQlJIK052UisyNHNRaFU5dUdqTFRaSHc9PSIsICAgICAiaG9zdG5hbWUiOiAia2VlcGVyc2VjdXJpdHkuY29tIiwgICAgI" +
-		"CJwcml2YXRlS2V5IjogIk1JR0hBZ0VBTUJNR0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEJHMHdhd0lCQVFRZ3VoekRJNGlW" +
-		"UzVCdzlsNWNmZkZYcFArRmh1bE5INDFHRFdWY3NiZ1h5aU9oUkFOQ0FBVGsxZnpvTDgvVkxwdVl1dTEzd0VsUE5wM2FHMmd" +
-		"sRmtFUHp4YWlNZ1ArdnRVZDRnWjIzVHBHdTFzMXRxS2FFZTloN1ZDVk1qd3ZEQTMxYW5mTWxZRjUiLCAgICAgInNlcnZlcl" +
-		"B1YmxpY0tleUlkIjogIjEwIiB9"
-
 	token := "US:ABC123"
-	hostname := "localhost"
-	config := ksm.NewMemoryKeyValueStorage(b64ConfigStr)
+	hostname := "fake.keepersecurity.com"
+	config := ksm.NewMemoryKeyValueStorage(fakeBase64ConfigStr)
 	secretsManager := ksm.NewSecretsManagerFromFullSetup(token, hostname, true, config)
 
 	if secretsManager.HostName != "keepersecurity.com" {
@@ -162,17 +154,9 @@ func TestOnetimeTokenFormatsAbbrev(t *testing.T) {
 	}
 }
 func TestOnetimeTokenFormatsHostname(t *testing.T) {
-	b64ConfigStr := "eyAgICAgImFwcEtleSI6ICI4S3gyNVN2dGtSU3NFWUl1cjdtSEt0THFBTkZOQjdBWlJhOWNxaTJQU1FFPSIsICAgICAiY2x" +
-		"pZW50SWQiOiAiNEgvVTVKNkRjZktMWUJJSUFWNVl3RUZHNG4zWGhpRHZOdG9Qa21TTUlUZVROWnNhL0VKMHpUYnBBQ1J0bU" +
-		"5VQlJIK052UisyNHNRaFU5dUdqTFRaSHc9PSIsICAgICAiaG9zdG5hbWUiOiAia2VlcGVyc2VjdXJpdHkuY29tIiwgICAgI" +
-		"CJwcml2YXRlS2V5IjogIk1JR0hBZ0VBTUJNR0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEJHMHdhd0lCQVFRZ3VoekRJNGlW" +
-		"UzVCdzlsNWNmZkZYcFArRmh1bE5INDFHRFdWY3NiZ1h5aU9oUkFOQ0FBVGsxZnpvTDgvVkxwdVl1dTEzd0VsUE5wM2FHMmd" +
-		"sRmtFUHp4YWlNZ1ArdnRVZDRnWjIzVHBHdTFzMXRxS2FFZTloN1ZDVk1qd3ZEQTMxYW5mTWxZRjUiLCAgICAgInNlcnZlcl" +
-		"B1YmxpY0tleUlkIjogIjEwIiB9"
-
 	token := "fake.keepersecurity.com:ABC123"
-	hostname := "localhost"
-	config := ksm.NewMemoryKeyValueStorage(b64ConfigStr)
+	hostname := "company.com"
+	config := ksm.NewMemoryKeyValueStorage(fakeBase64ConfigStr)
 	secretsManager := ksm.NewSecretsManagerFromFullSetup(token, hostname, true, config)
 
 	if secretsManager.HostName != "fake.keepersecurity.com" {
@@ -314,22 +298,7 @@ func TestPublicKeyId(t *testing.T) {
 }
 
 func TestInMemoryBase64Config(t *testing.T) {
-	// JSON:
-	// {
-	//     "appKey": "MY APP KEY",
-	//     "clientId": "MY CLIENT ID",
-	//     "hostname": "fake.keepersecurity.com",
-	//     "privateKey": "MY PRIVATE KEY",
-	//     "serverPublicKeyId": "7"
-	// }
-	//
-	// The above JSON in base64:
-	// eyJhcHBLZXkiOiJNWSBBUFAgS0VZIiwiY2xpZW50SWQiOiJNWSBDTElFTlQgSUQiLCJob3N0bmFtZSI6ImZha2Uua2VlcGVyc2VjdXJpdHkuY29tIiwicHJpdmF0ZUtleSI6Ik1ZIFBSSVZBVEUgS0VZIiwic2VydmVyUHVibGljS2V5SWQiOiI3In0=
-
-	base64ConfigStr := "eyJhcHBLZXkiOiJNWSBBUFAgS0VZIiwiY2xpZW50SWQiOiJNWSBDTElFTlQgSUQiLCJob3N0bmFtZSI6" +
-		"ImZha2Uua2VlcGVyc2VjdXJpdHkuY29tIiwicHJpdmF0ZUtleSI6Ik1ZIFBSSVZBVEUgS0VZIiwic2Vy" +
-		"dmVyUHVibGljS2V5SWQiOiI3In0="
-	secretsManager := ksm.NewSecretsManagerFromConfig(ksm.NewMemoryKeyValueStorage(base64ConfigStr))
+	secretsManager := ksm.NewSecretsManagerFromConfig(ksm.NewMemoryKeyValueStorage(fakeBase64ConfigStr))
 	dictConfig := secretsManager.Config.ReadStorage()
 
 	success := false
@@ -408,24 +377,8 @@ func TestInMemoryBase64Config(t *testing.T) {
 }
 
 func TestInMemoryBase64ConfigViaEnv(t *testing.T) {
-	// JSON:
-	// {
-	//     "appKey": "MY APP KEY",
-	//     "clientId": "MY CLIENT ID",
-	//     "hostname": "fake.keepersecurity.com",
-	//     "privateKey": "MY PRIVATE KEY",
-	//     "serverPublicKeyId": "7"
-	// }
-	//
-	// The above JSON in base64:
-	// eyJhcHBLZXkiOiJNWSBBUFAgS0VZIiwiY2xpZW50SWQiOiJNWSBDTElFTlQgSUQiLCJob3N0bmFtZSI6ImZha2Uua2VlcGVyc2VjdXJpdHkuY29tIiwicHJpdmF0ZUtleSI6Ik1ZIFBSSVZBVEUgS0VZIiwic2VydmVyUHVibGljS2V5SWQiOiI3In0=
-
-	base64ConfigStr := "eyJhcHBLZXkiOiJNWSBBUFAgS0VZIiwiY2xpZW50SWQiOiJNWSBDTElFTlQgSUQiLCJob3N0bmFtZSI6" +
-		"ImZha2Uua2VlcGVyc2VjdXJpdHkuY29tIiwicHJpdmF0ZUtleSI6Ik1ZIFBSSVZBVEUgS0VZIiwic2Vy" +
-		"dmVyUHVibGljS2V5SWQiOiI3In0="
-
-		// Put the config into env var,
-	os.Setenv("KSM_CONFIG", base64ConfigStr)
+	// Put the config into env var,
+	os.Setenv("KSM_CONFIG", fakeBase64ConfigStr)
 	secretsManager := ksm.NewSecretsManager()
 	dictConfig := secretsManager.Config.ReadStorage()
 
