@@ -7,6 +7,11 @@ import (
 	ksm "github.com/keeper-security/secrets-manager-go/core"
 )
 
+const (
+	fakeExceptionAppKey     string = "8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE="
+	fakeExceptionPrivateKey string = "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
+)
+
 func TestOurException(t *testing.T) {
 	// Exceptions the Secrets Manager server will send that have meaning.
 	defer func() {
@@ -24,10 +29,10 @@ func TestOurException(t *testing.T) {
 	rawJson := `
 {
 	"hostname": "fake.keepersecurity.com",
-	"appKey": "8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE=",
-	"clientId": "45haqPHrK5csKjr2jXJRYrykxaE50QsAR/FR8OiU7aak5LexpGX50/23FJRwNK02thysUBf7AZReQK9q7Q8UUw==",
-	"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo=",
-	"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
+	"appKey": "` + fakeExceptionAppKey + `",
+	"clientId": "CLIENT_ID",
+	"clientKey": "CLIENT_KEY",
+	"privateKey": "` + fakeExceptionPrivateKey + `"
 }`
 	config := ksm.NewMemoryKeyValueStorage(rawJson)
 	sm := ksm.NewSecretsManagerFromConfig(config)
@@ -68,10 +73,10 @@ func TestNotOurException(t *testing.T) {
 	rawJson := `
 {
 	"hostname": "fake.keepersecurity.com",
-	"appKey": "8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE=",
-	"clientId": "45haqPHrK5csKjr2jXJRYrykxaE50QsAR/FR8OiU7aak5LexpGX50/23FJRwNK02thysUBf7AZReQK9q7Q8UUw==",
-	"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo=",
-	"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
+	"appKey": "` + fakeExceptionAppKey + `",
+	"clientId": "CLIENT_ID",
+	"clientKey": "CLIENT_KEY",
+	"privateKey": "` + fakeExceptionPrivateKey + `"
 }`
 	config := ksm.NewMemoryKeyValueStorage(rawJson)
 	sm := ksm.NewSecretsManagerFromConfig(config)
@@ -92,10 +97,10 @@ func TestKeyRotation(t *testing.T) {
 	rawJson := `
 {
 	"hostname": "fake.keepersecurity.com",
-	"appKey": "8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE=",
-	"clientId": "45haqPHrK5csKjr2jXJRYrykxaE50QsAR/FR8OiU7aak5LexpGX50/23FJRwNK02thysUBf7AZReQK9q7Q8UUw==",
-	"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo=",
-	"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
+	"appKey": "` + fakeExceptionAppKey + `",
+	"clientId": "CLIENT_ID",
+	"clientKey": "CLIENT_KEY",
+	"privateKey": "` + fakeExceptionPrivateKey + `"
 }`
 	config := ksm.NewMemoryKeyValueStorage(rawJson)
 	sm := ksm.NewSecretsManagerFromConfig(config, Ctx)

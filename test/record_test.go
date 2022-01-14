@@ -11,14 +11,13 @@ func TestLoginRecordPassword(t *testing.T) {
 	defer ResetMockResponseQueue()
 
 	rawJson := `
-	{
-		"hostname": "fake.keepersecurity.com",
-		"appKey": "9vVajcvJTGsa2Opc/jvhEiJLRKHtg2Rm4PAtUoP3URw=",
-		"clientId": "Ae3589ktgynN6vvFtBwlsAbf0fHhXCcf7JqtKXK/3UCELujQuYuXvFFP08d2rb4aQ5Z4ozgD2yek9sjbWj7YoQ==",
-		"clientKey": "zKoSCC6eNrd3N9CByRBsdChSsTeDEAMvNj9Bdh7BJuo=",
-		"privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
-	}
-				`
+{
+	"hostname": "fake.keepersecurity.com",
+	"appKey": "` + fakeExceptionAppKey + `",
+	"clientId": "CLIENT_ID",
+	"clientKey": "CLIENT_KEY",
+	"privateKey": "` + fakeExceptionPrivateKey + `"
+}`
 	config := ksm.NewMemoryKeyValueStorage(rawJson)
 	sm := ksm.NewSecretsManagerFromConfig(config, Ctx)
 
