@@ -407,7 +407,10 @@ func (c *SecretsManager) prepareCreatePayload(record *Record) (res *CreatePayloa
 		return nil, fmt.Errorf("unable to create record - folder key for '%s' not found", record.folderUid)
 	}
 
-	payload.RecordUid = record.Uid
+	// convert any record UID in Base64 encoding to UrlSafeBase64
+	recordUid := BytesToUrlSafeStr(Base64ToBytes(record.Uid))
+
+	payload.RecordUid = recordUid
 	payload.FolderUid = record.folderUid
 
 	rawJsonBytes := StringToBytes(record.RawJson)
