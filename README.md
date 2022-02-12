@@ -147,3 +147,12 @@ secretToUpdate.SetPassword("NewPassword123$")
 
 secretsManager.Save(secretToUpdate)
 ```
+
+### Documentation
+[Secrets Manager Guide](https://docs.keeper.io/secrets-manager/secrets-manager/overview)
+
+[Enterprise Admin Guide](https://docs.keeper.io/enterprise-guide/)
+
+[Keeper Commander Guide](https://docs.keeper.io/secrets-manager/commander-cli/overview)
+
+[Keeper Security Website](https://www.keepersecurity.com/secrets-manager.html)
