@@ -14,13 +14,12 @@ func main() {
 	klog.Info("Secrets Manager Started")
 
 	// One time tokens can be used only once - afterwards use the generated config.json
-	// token := "US:ONE_TIME_TOKEN_BASE64"
-	// hostname := "ksm.company.com"
-	// verfySllCerts := true
-	// config := ksm.NewFileKeyValueStorage("ksm-config.json")
-	// sm := ksm.NewSecretsManagerFromFullSetup(token, hostname, verfySllCerts, config)
+	// clientOptions := &ksm.ClientOptions{
+	// 	Token:  "US:ONE_TIME_TOKEN_BASE64",
+	// 	Config: ksm.NewFileKeyValueStorage("ksm-config.json")}
+	// sm := ksm.NewSecretsManager(clientOptions)
 
-	sm := ksm.NewSecretsManagerFromConfig(ksm.NewFileKeyValueStorage("client-config.json"))
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: ksm.NewFileKeyValueStorage("ksm-config.json")})
 
 	allRecords, err := sm.GetSecrets([]string{})
 	if err != nil {

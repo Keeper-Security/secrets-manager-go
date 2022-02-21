@@ -7,11 +7,6 @@ import (
 	ksm "github.com/keeper-security/secrets-manager-go/core"
 )
 
-const (
-	fakeExceptionAppKey     string = "8Kx25SvtkRSsEYIur7mHKtLqANFNB7AZRa9cqi2PSQE="
-	fakeExceptionPrivateKey string = "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgaKWvicgtslVJKJU+/LBMQQGfJAycwOtx9djH0YEvBT+hRANCAASB1L44QodSzRaIOhF7f/2GlM8Fg0R3i3heIhMEdkhcZRDLxIGEeOVi3otS0UBFTrbET6joq0xCjhKMhHQFaHYI"
-)
-
 func TestOurException(t *testing.T) {
 	// Exceptions the Secrets Manager server will send that have meaning.
 	defer func() {
@@ -26,16 +21,9 @@ func TestOurException(t *testing.T) {
 	}()
 	defer ResetMockResponseQueue()
 
-	rawJson := `
-{
-	"hostname": "fake.keepersecurity.com",
-	"appKey": "` + fakeExceptionAppKey + `",
-	"clientId": "CLIENT_ID",
-	"clientKey": "CLIENT_KEY",
-	"privateKey": "` + fakeExceptionPrivateKey + `"
-}`
-	config := ksm.NewMemoryKeyValueStorage(rawJson)
-	sm := ksm.NewSecretsManagerFromConfig(config)
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", ""))
+	config := ksm.NewMemoryKeyValueStorage(configJson)
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config})
 
 	// Make the error message
 	errorJson := `
@@ -70,16 +58,9 @@ func TestNotOurException(t *testing.T) {
 	}()
 	defer ResetMockResponseQueue()
 
-	rawJson := `
-{
-	"hostname": "fake.keepersecurity.com",
-	"appKey": "` + fakeExceptionAppKey + `",
-	"clientId": "CLIENT_ID",
-	"clientKey": "CLIENT_KEY",
-	"privateKey": "` + fakeExceptionPrivateKey + `"
-}`
-	config := ksm.NewMemoryKeyValueStorage(rawJson)
-	sm := ksm.NewSecretsManagerFromConfig(config)
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", ""))
+	config := ksm.NewMemoryKeyValueStorage(configJson)
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config})
 
 	MockResponseQueue.AddMockResponse(NewMockResponse([]byte("Bad Gateway"), 502, nil))
 
@@ -94,16 +75,9 @@ func TestKeyRotation(t *testing.T) {
 	// Special exception for rotating the public key.
 	defer ResetMockResponseQueue()
 
-	rawJson := `
-{
-	"hostname": "fake.keepersecurity.com",
-	"appKey": "` + fakeExceptionAppKey + `",
-	"clientId": "CLIENT_ID",
-	"clientKey": "CLIENT_KEY",
-	"privateKey": "` + fakeExceptionPrivateKey + `"
-}`
-	config := ksm.NewMemoryKeyValueStorage(rawJson)
-	sm := ksm.NewSecretsManagerFromConfig(config, Ctx)
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", ""))
+	config := ksm.NewMemoryKeyValueStorage(configJson)
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}, Ctx)
 
 	res1 := NewMockResponse([]byte{}, 200, nil)
 	mockRecord1 := res1.AddRecord("My Record", "login", "", nil, nil)

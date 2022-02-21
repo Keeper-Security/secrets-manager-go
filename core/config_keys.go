@@ -38,3 +38,17 @@ func GetConfigKey(value string) ConfigKey {
 		return ""
 	}
 }
+
+func GetConfigKeys() []ConfigKey {
+	return []ConfigKey{
+		KEY_URL,
+		KEY_SERVER_PUBLIC_KEY_ID,
+		KEY_CLIENT_ID,
+		KEY_CLIENT_KEY,
+		KEY_APP_KEY,
+		KEY_OWNER_PUBLIC_KEY,
+		KEY_PRIVATE_KEY,
+		KEY_PUBLIC_KEY,
+		KEY_HOSTNAME,
+	}
+}

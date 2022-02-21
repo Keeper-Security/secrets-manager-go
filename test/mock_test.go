@@ -2,6 +2,7 @@ package test
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -10,23 +11,24 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	ksm "github.com/keeper-security/secrets-manager-go/core"
+	"github.com/keeper-security/secrets-manager-go/core"
 )
 
 var (
 	MockResponseQueue mockResponseQueue = mockResponseQueue{}
-	context           *ksm.Context      = &ksm.Context{}
-	Ctx               **ksm.Context     = &context
+	context           *core.Context     = &core.Context{}
+	Ctx               **core.Context    = &context
 )
 
 func ResetMockResponseQueue() {
 	MockResponseQueue = mockResponseQueue{}
-	context = &ksm.Context{}
+	context = &core.Context{}
 	Ctx = &context
 }
 
@@ -112,15 +114,15 @@ func (m *MockResponse) Dump(secret []byte, flags *MockFlags) map[string]interfac
 	return response
 }
 
-func (m *MockResponse) InstanceSetup(context *ksm.Context) {
+func (m *MockResponse) InstanceSetup(context *core.Context) {
 	// Setup Response instance filled in with mock response message
-	// The method requires an instance of *ksm.Context since that information on how to encrypt the response message.
+	// The method requires an instance of *core.Context since that information on how to encrypt the response message.
 
 	m.Headers.Add("Date", time.Now().UTC().Format(time.RFC1123))
 	// If canned content has not been set, the create content from records/folders.
 	if len(m.Content) == 0 {
-		jsonStr := ksm.DictToJson(m.Dump(context.ClientKey, m.Flags))
-		if content, err := ksm.EncryptAesGcm([]byte(jsonStr), context.TransmissionKey.Key); err == nil {
+		jsonStr := core.DictToJson(m.Dump(context.ClientKey, m.Flags))
+		if content, err := core.EncryptAesGcm([]byte(jsonStr), context.TransmissionKey.Key); err == nil {
 			m.Content = content
 			m.Headers.Add("Content-Length", strconv.Itoa(len(content)))
 			m.StatusCode = 200
@@ -132,7 +134,7 @@ func (m *MockResponse) InstanceSetup(context *ksm.Context) {
 	// Else return the canned content. This is useful to mock errors that return plain or json text.
 }
 
-func (m *MockResponse) AddRecord(title, recordType, uid string, record *MockRecord, keeperRecord *ksm.Record) *MockRecord {
+func (m *MockResponse) AddRecord(title, recordType, uid string, record *MockRecord, keeperRecord *core.Record) *MockRecord {
 	if keeperRecord != nil {
 		record = ConvertKeeperRecord(keeperRecord)
 	} else if record == nil {
@@ -164,7 +166,7 @@ func (q *mockResponseQueue) AddMockResponse(r *MockResponse) {
 	q.queue = append(q.queue, r)
 }
 
-func (q *mockResponseQueue) GetMockResponse(context *ksm.Context) *MockResponse {
+func (q *mockResponseQueue) GetMockResponse(context *core.Context) *MockResponse {
 	var rs *MockResponse = nil
 	if len(q.queue) > 0 {
 		rs = q.queue[0]
@@ -256,8 +258,8 @@ func (f *MockFolder) AddRecord(title, recordType, uid string, record *MockRecord
 }
 
 func (f *MockFolder) Dump(secret []byte, flags *MockFlags) map[string]interface{} {
-	encFolderKey, _ := ksm.EncryptAesGcm(secret, secret)
-	folderKey := ksm.BytesToBase64(encFolderKey)
+	encFolderKey, _ := core.EncryptAesGcm(secret, secret)
+	folderKey := core.BytesToBase64(encFolderKey)
 
 	records := []interface{}{}
 	for _, record := range f.Records {
@@ -325,7 +327,7 @@ func (f *MockFile) DownloadableContent() []byte {
 	if len(f.SecretUsed) == 0 {
 		log.Panicln("The file has not be dumped yet, Secret is unknown.")
 	}
-	content, _ := ksm.EncryptAesGcm(f.Content, f.SecretUsed)
+	content, _ := core.EncryptAesGcm(f.Content, f.SecretUsed)
 	return content
 }
 
@@ -340,12 +342,12 @@ func (f *MockFile) Dump(secret []byte, flags *MockFlags) map[string]interface{} 
 		"type":         f.ContentType,
 	}
 
-	data := ksm.DictToJson(d)
-	encData, _ := ksm.EncryptAesGcm([]byte(data), secret)
-	recordData := ksm.BytesToBase64(encData)
+	data := core.DictToJson(d)
+	encData, _ := core.EncryptAesGcm([]byte(data), secret)
+	recordData := core.BytesToBase64(encData)
 
-	encFileKey, _ := ksm.EncryptAesGcm(secret, secret)
-	fileKey := ksm.BytesToBase64(encFileKey)
+	encFileKey, _ := core.EncryptAesGcm(secret, secret)
+	fileKey := core.BytesToBase64(encFileKey)
 
 	fileData := map[string]interface{}{
 		"fileUid":      f.Uid,
@@ -398,7 +400,7 @@ func NewMockRecord(recordType, uid, title string) *MockRecord {
 	}
 }
 
-func ConvertKeeperRecord(keeperRecord *ksm.Record) *MockRecord {
+func ConvertKeeperRecord(keeperRecord *core.Record) *MockRecord {
 	mockRecord := MockRecord{
 		Uid:          keeperRecord.Uid,
 		RecordType:   keeperRecord.Type(),
@@ -550,12 +552,12 @@ func (r *MockRecord) Dump(secret []byte, flags *MockFlags) map[string]interface{
 		}
 	}
 
-	jsonData := ksm.DictToJson(dataMap)
-	encData, _ := ksm.EncryptAesGcm([]byte(jsonData), secret)
-	recordData := ksm.BytesToBase64(encData)
+	jsonData := core.DictToJson(dataMap)
+	encData, _ := core.EncryptAesGcm([]byte(jsonData), secret)
+	recordData := core.BytesToBase64(encData)
 
-	recKey, _ := ksm.EncryptAesGcm(secret, secret)
-	recordKey := ksm.BytesToBase64(recKey)
+	recKey, _ := core.EncryptAesGcm(secret, secret)
+	recordKey := core.BytesToBase64(recKey)
 
 	data := map[string]interface{}{
 		"recordUid":  r.Uid,
@@ -566,4 +568,58 @@ func (r *MockRecord) Dump(secret []byte, flags *MockFlags) map[string]interface{
 	}
 
 	return data
+}
+
+// MockConfig represents a generated config for use in tests
+type MockConfig struct{}
+
+func (m MockConfig) MakeConfig(skipList []string, token string, appKey string) map[string]string {
+	config := map[string]string{}
+
+	skipSet := make(map[string]struct{}, len(skipList))
+	for _, s := range skipList {
+		skipSet[s] = struct{}{}
+	}
+
+	token = strings.TrimSpace(token)
+	if token == "" {
+		randomBytes, _ := core.GetRandomBytes(32)
+		token = core.BytesToUrlSafeStr(randomBytes)
+	}
+
+	// Generate random hostname
+	rx := regexp.MustCompile("[^a-zA-Z0-9]+")
+	hostname := strings.ReplaceAll("www."+rx.ReplaceAllString(core.GenerateUid(), "")+".com", "..", ".")
+
+	smConfig := core.NewMemoryKeyValueStorage()
+	core.NewSecretsManager(&core.ClientOptions{Token: token, Hostname: hostname, InsecureSkipVerify: true, Config: smConfig})
+
+	appKey = strings.TrimSpace(appKey)
+	if appKey == "" {
+		randomBytes, _ := core.GetRandomBytes(32)
+		appKey = core.BytesToBase64(randomBytes)
+	}
+	smConfig.Set(core.KEY_APP_KEY, appKey)
+
+	for _, key := range core.GetConfigKeys() {
+		if _, found := skipSet[string(key)]; !found {
+			if smConfig.Contains(key) {
+				config[string(key)] = smConfig.Get(key)
+			}
+		}
+	}
+
+	return config
+}
+
+func (m MockConfig) MakeJson(config map[string]string) string {
+	jsonConfig, err := json.Marshal(config)
+	if err != nil {
+		jsonConfig = []byte{}
+	}
+	return string(jsonConfig)
+}
+
+func (m MockConfig) MakeBase64(config map[string]string) string {
+	return core.BytesToBase64([]byte(m.MakeJson(config)))
 }

@@ -10,16 +10,9 @@ func TestLoginRecordPassword(t *testing.T) {
 	// If the record type is login or general, the password is expected in fields[]
 	defer ResetMockResponseQueue()
 
-	rawJson := `
-{
-	"hostname": "fake.keepersecurity.com",
-	"appKey": "` + fakeExceptionAppKey + `",
-	"clientId": "CLIENT_ID",
-	"clientKey": "CLIENT_KEY",
-	"privateKey": "` + fakeExceptionPrivateKey + `"
-}`
-	config := ksm.NewMemoryKeyValueStorage(rawJson)
-	sm := ksm.NewSecretsManagerFromConfig(config, Ctx)
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", ""))
+	config := ksm.NewMemoryKeyValueStorage(configJson)
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}, Ctx)
 
 	// A good record.
 	// 'fields': [...{'type': 'password', 'value': ['My Password']}...]
