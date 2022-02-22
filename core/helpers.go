@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"net"
 	"net/url"
 	"os"
@@ -36,4 +37,30 @@ func GetServerHostname(hostname string, configStore IKeyValueStorage) string {
 	klog.Debug("Keeper server hostname: " + hostnameToReturn)
 
 	return hostnameToReturn
+}
+
+func IsJson(jsonStr string) bool {
+	var js interface{}
+	return json.Unmarshal([]byte(jsonStr), &js) == nil
+}
+
+func ObjToDict(obj interface{}) map[string]interface{} {
+	if o, ok := obj.(map[string]interface{}); ok {
+		return o
+	}
+	content, err := json.Marshal(obj)
+	if err != nil {
+		content = []byte("{}")
+	}
+	return JsonToDict(string(content))
+
+}
+
+func GetFolderByKey(folderUid string, folders []*Folder) *Folder {
+	for _, f := range folders {
+		if f.uid == folderUid {
+			return f
+		}
+	}
+	return nil
 }

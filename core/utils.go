@@ -70,10 +70,12 @@ func UrlSafeStrToBytes(text string) []byte {
 	text = strings.ReplaceAll(text, "+", "-")
 	text = strings.ReplaceAll(text, "/", "_")
 
-	if result, err := base64.RawURLEncoding.DecodeString(text); err == nil {
+	if result, err := base64.RawURLEncoding.DecodeString(text); err != nil {
+		klog.Error("error converting base64 URL safe string to bytes - text: '" + text + "' - " + err.Error())
+		return nil
+	} else {
 		return result
 	}
-	return nil
 }
 
 func BytesToBase64(data []byte) string {

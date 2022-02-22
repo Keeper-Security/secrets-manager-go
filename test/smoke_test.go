@@ -14,21 +14,15 @@ func TestTheWorks(t *testing.T) {
 	// This test is mocked to return 3 record (2 records, 1 folder with a record)
 	defer ResetMockResponseQueue()
 
-	rawJson := `
-{
-	"hostname": "fake.keepersecurity.com",
-	"appKey": "` + fakeNotationAppKey + `",
-	"clientId": "CLIENT_ID",
-	"clientKey": "CLIENT_KEY",
-	"privateKey": "` + fakeNotationPrivateKey + `"
-}`
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", ""))
 	if f, err := ioutil.TempFile("", ""); err == nil {
 		defer func() {
 			f.Close()
 			os.Remove(f.Name())
 		}()
-		if err := ioutil.WriteFile(f.Name(), []byte(rawJson), 0644); err == nil {
-			sm := ksm.NewSecretsManagerFromConfig(ksm.NewFileKeyValueStorage(f.Name()), Ctx)
+		if err := ioutil.WriteFile(f.Name(), []byte(configJson), 0644); err == nil {
+			config := ksm.NewFileKeyValueStorage(f.Name())
+			sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}, Ctx)
 
 			// --------------------------
 			// Add three records, 2 outside a folder, 1 inside folder
@@ -172,32 +166,32 @@ func TestVerifySslCerts(t *testing.T) {
 	config.Set(ksm.KEY_CLIENT_KEY, "ABC123")
 
 	os.Setenv("KSM_SKIP_VERIFY", "")
-	if sm := ksm.NewSecretsManagerFromConfig(config); !sm.VerifySslCerts {
+	if sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}); !sm.VerifySslCerts {
 		t.Error(" VerifySslCerts is not true on 'no args; instance")
 	}
 
 	os.Setenv("KSM_SKIP_VERIFY", "")
-	if sm := ksm.NewSecretsManagerFromFullSetup("1234", "EU", true, config); !sm.VerifySslCerts {
+	if sm := ksm.NewSecretsManager(&ksm.ClientOptions{Token: "1234", Hostname: "EU", InsecureSkipVerify: false, Config: config}); !sm.VerifySslCerts {
 		t.Error(" VerifySslCerts is not true on param instance")
 	}
 
 	os.Setenv("KSM_SKIP_VERIFY", "")
-	if sm := ksm.NewSecretsManagerFromFullSetup("1234", "EU", false, config); sm.VerifySslCerts {
+	if sm := ksm.NewSecretsManager(&ksm.ClientOptions{Token: "1234", Hostname: "EU", InsecureSkipVerify: true, Config: config}); sm.VerifySslCerts {
 		t.Error(" VerifySslCerts is not false on param instance")
 	}
 
 	os.Setenv("KSM_SKIP_VERIFY", "FALSE")
-	if sm := ksm.NewSecretsManagerFromConfig(config); !sm.VerifySslCerts {
+	if sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}); !sm.VerifySslCerts {
 		t.Error(" VerifySslCerts is not false on env set (FALSE)")
 	}
 
 	os.Setenv("KSM_SKIP_VERIFY", "NO")
-	if sm := ksm.NewSecretsManagerFromConfig(config); !sm.VerifySslCerts {
+	if sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}); !sm.VerifySslCerts {
 		t.Error(" VerifySslCerts is not false on env set (NO)")
 	}
 
 	os.Setenv("KSM_SKIP_VERIFY", "True")
-	if sm := ksm.NewSecretsManagerFromConfig(config); sm.VerifySslCerts {
+	if sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}); sm.VerifySslCerts {
 		t.Error(" VerifySslCerts is not true on env set (True)")
 	}
 }

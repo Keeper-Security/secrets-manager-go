@@ -12,7 +12,7 @@ func TestPrepareContext(t *testing.T) {
 	config.Set(ksm.KEY_APP_KEY, "MY APP KEY")
 
 	// Pass in the config
-	sm := ksm.NewSecretsManagerFromConfig(config)
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config})
 
 	// There should be no app key
 	if sm.Config.Get(ksm.KEY_APP_KEY) != "" {

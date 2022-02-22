@@ -53,15 +53,14 @@ import ksm "github.com/keeper-security/secrets-manager-go/core"
 func main() {
 	// Establish connection
 	// One time secrets generated via Web Vault or Commander CLI
-	hostname := "keepersecurity.com"
-	token := "<One Time Access Token>"
-	verfySllCerts := true
-	config := ksm.NewFileKeyValueStorage("ksm-config.json")
-	sm := ksm.NewSecretsManagerFromFullSetup(token, hostname, verfySllCerts, config)
+	clientOptions := &ksm.ClientOptions{
+		Token:  "US:ONE_TIME_TOKEN_BASE64",
+		Config: ksm.NewFileKeyValueStorage("ksm-config.json")}
+	sm := ksm.NewSecretsManager(clientOptions)
 	// One time tokens can be used only once - afterwards use the generated config file
-	// sm := ksm.NewSecretsManagerFromConfig(ksm.NewFileKeyValueStorage("client-config.json"))
+	// sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: ksm.NewFileKeyValueStorage("ksm-config.json")})
 
-	// Retrieve all password records
+	// Retrieve all records
 	allRecords, _ := sm.GetSecrets([]string{})
 
 	// Get password from first record:
@@ -75,7 +74,7 @@ func main() {
 ## Samples
 ### File Download
 ```golang
-sm := ksm.NewSecretsManagerFromConfig(ksm.NewFileKeyValueStorage("client-config.json"))
+sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: ksm.NewFileKeyValueStorage("ksm-config.json")})
 
 if records, err := sm.GetSecrets([]string{}); err == nil {
 	for _, r := range records {
@@ -90,7 +89,7 @@ if records, err := sm.GetSecrets([]string{}); err == nil {
 
 ### Update record
 ```golang
-sm := ksm.NewSecretsManagerFromConfig(ksm.NewFileKeyValueStorage("client-config.json"))
+sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: ksm.NewFileKeyValueStorage("ksm-config.json")})
 
 if records, err := sm.GetSecrets([]string{}); err == nil && len(records) > 0 {
 	record := records[0]
@@ -135,18 +134,18 @@ sm share add --app [NAME] --secret [UID3] --editable
 
 ### Retrieve secret(s)
 ```golang
-secretsManager := ksm.NewSecretsManagerFromConfig(ksm.NewFileKeyValueStorage("client-config.json"))
-allSecrets, _ := secretsManager.GetSecrets([]string{})
+sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: ksm.NewFileKeyValueStorage("ksm-config.json")})
+allSecrets, _ := sm.GetSecrets([]string{})
 ```
 
 ### Update secret
 ```golang
 secretToUpdate = allSecrets[0]
-
 secretToUpdate.SetPassword("NewPassword123$")
-
 secretsManager.Save(secretToUpdate)
 ```
+
+For additional information please check our detailed [Go SDK docs](https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/golang-sdk) for Keeper Secrets Manager.
 
 ### Documentation
 [Secrets Manager Guide](https://docs.keeper.io/secrets-manager/secrets-manager/overview)

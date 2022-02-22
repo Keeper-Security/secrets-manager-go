@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -29,99 +30,130 @@ const (
 // 	}
 // )
 
+type ClientOptions struct {
+	// Token specifies a One-Time Access Token used
+	// to generate the configuration to use with core.SecretsManager client
+	Token string
+
+	// InsecureSkipVerify controls whether the client verifies
+	// server's certificate chain and host name
+	InsecureSkipVerify bool
+
+	// Config specifies either one of the built-in IKeyValueStorage interfaces or a custom one
+	Config IKeyValueStorage
+
+	// LogLevel overrides the default log level for the logger
+	LogLevel klog.LogLevel
+
+	// Deprecated: Use Token instead. If both are set, hostname from the token takes priority.
+	Hostname string
+}
+
 type SecretsManager struct {
 	Token          string
-	HostName       string
+	Hostname       string
 	VerifySslCerts bool
 	Config         IKeyValueStorage
 	context        **Context
 	cache          ICache
 }
 
-func NewSecretsManager() *SecretsManager {
+func NewSecretsManager(options *ClientOptions, arg ...interface{}) *SecretsManager {
+	// set default values
 	sm := &SecretsManager{
 		VerifySslCerts: true,
 	}
-	sm.init()
-	return sm
-}
 
-func NewSecretsManagerFromConfig(config IKeyValueStorage, arg ...interface{}) *SecretsManager {
-	sm := &SecretsManager{
-		VerifySslCerts: true,
-		Config:         config,
-	}
+	// context used in tests only
 	if len(arg) > 0 {
 		if ctx, ok := arg[0].(**Context); ok && ctx != nil {
 			sm.context = ctx
 		}
 	}
-	sm.init()
-	return sm
-}
 
-func NewSecretsManagerFromSettings(token string, hostname string, verifySslCerts bool) *SecretsManager {
-	return NewSecretsManagerFromFullSetup(token, hostname, verifySslCerts, NewFileKeyValueStorage())
-}
-
-func NewSecretsManagerFromFullSetup(token string, hostname string, verifySslCerts bool, config IKeyValueStorage) *SecretsManager {
-	if config == nil {
-		// If the config is not defined and the KSM_CONFIG env var exists, get the config from the env var.
-		if ksmConfig := strings.TrimSpace(os.Getenv("KSM_CONFIG")); ksmConfig != "" {
-			config = NewMemoryKeyValueStorage(ksmConfig)
-			klog.Warning("Config initialised from env var KSM_CONFIG")
+	// If the config is not defined and the KSM_CONFIG env var exists,
+	// get the config from the env var.
+	if options != nil && options.Config != nil {
+		sm.Config = options.Config
+	}
+	ksmConfig := strings.TrimSpace(os.Getenv("KSM_CONFIG"))
+	if sm.Config == nil && ksmConfig != "" {
+		sm.Config = NewMemoryKeyValueStorage(ksmConfig)
+		klog.Warning("Config initialised from env var KSM_CONFIG")
+	} else if options != nil && strings.TrimSpace(options.Token) != "" {
+		token := strings.TrimSpace(options.Token)
+		hostname := strings.TrimSpace(options.Hostname)
+		if tokenParts := strings.Split(token, ":"); len(tokenParts) == 1 {
+			// token in legacy format without hostname prefix
+			if hostname == "" {
+				klog.Panicln("The hostname must be present in the token or provided as a parameter")
+			}
+			sm.Token = token
+			sm.Hostname = hostname
 		} else {
-			config = NewFileKeyValueStorage()
+			tokenPart0 := strings.TrimSpace(tokenParts[0])
+			tokenPart1 := strings.TrimSpace(tokenParts[1])
+			if len(tokenParts) != 2 || tokenPart0 == "" || tokenPart1 == "" {
+				klog.Warning("Expected token format 'Host:Base64Key', ex. US:ONE_TIME_TOKEN_BASE64 - got " + token)
+			}
+			if tokenHost, found := keeperServers[strings.ToUpper(tokenPart0)]; found {
+				// token contains abbreviation: ex. "US:ONE_TIME_TOKEN"
+				if hostname != "" && hostname != tokenHost {
+					klog.Warning(fmt.Sprintf("Replacing hostname '%s' with token based hostname '%s'", hostname, tokenHost))
+				}
+				sm.Hostname = tokenHost
+			} else {
+				// token contains url prefix: ex. "ksm.company.com:ONE_TIME_TOKEN"
+				if hostname != "" && hostname != tokenPart0 {
+					klog.Warning(fmt.Sprintf("Replacing hostname '%s' with token based hostname '%s'", hostname, tokenHost))
+				}
+				sm.Hostname = tokenPart0
+			}
+			sm.Token = tokenPart1
 		}
 	}
 
-	smToken, smHost := "", ""
-	token = strings.TrimSpace(token)
-	hostname = strings.TrimSpace(hostname)
-	if tokenParts := strings.Split(token, ":"); len(tokenParts) == 1 {
-		// token in legacy format without hostname prefix
-		if hostname == "" {
-			klog.Panicln("The hostname must be present in the token or provided as a parameter")
-		}
-		smToken = token
-		smHost = hostname
-	} else {
-		tokenPart0 := strings.TrimSpace(tokenParts[0])
-		tokenPart1 := strings.TrimSpace(tokenParts[1])
-		if len(tokenParts) != 2 || tokenPart0 == "" || tokenPart1 == "" {
-			klog.Warning("Expected token format 'Host:Base64Key', ex. US:ONE_TIME_TOKEN_BASE64 - got " + token)
-		}
-		if tokenHost, found := keeperServers[strings.ToUpper(tokenPart0)]; found {
-			// token contains abbreviation: ex. "US:ONE_TIME_TOKEN"
-			if hostname != "" && hostname != tokenHost {
-				klog.Warning(fmt.Sprintf("Replacing hostname '%s' with token based hostname '%s'", hostname, tokenHost))
-			}
-			smHost = tokenHost
+	// Init the log, set log level
+	if options != nil && options.LogLevel > 0 {
+		klog.SetLogLevel(options.LogLevel)
+	}
+
+	if options != nil && options.InsecureSkipVerify {
+		sm.VerifySslCerts = false
+	}
+	// Accept the env var KSM_SKIP_VERIFY
+	if ksv := strings.TrimSpace(os.Getenv("KSM_SKIP_VERIFY")); ksv != "" {
+		if ksvBool, err := StrToBool(ksv); err == nil {
+			// We need to flip the value of KSM_SKIP_VERIFY, if true, we want VerifySslCerts to be false.
+			sm.VerifySslCerts = !ksvBool
 		} else {
-			// token contains url prefix: ex. "ksm.company.com:ONE_TIME_TOKEN"
-			if hostname != "" && hostname != tokenPart0 {
-				klog.Warning(fmt.Sprintf("Replacing hostname '%s' with token based hostname '%s'", hostname, tokenHost))
-			}
-			smHost = tokenPart0
+			klog.Error("error parsing boolean value from KSM_SKIP_VERIFY=" + ksv)
 		}
-		smToken = tokenPart1
+	}
+
+	if sm.Config == nil {
+		sm.Config = NewFileKeyValueStorage()
 	}
 
 	// If the hostname or client key are set in the args, make sure they make their way into the config.
 	// They will override what is already in the config if they exist.
-	if cKey := strings.TrimSpace(smToken); cKey != "" {
-		config.Set(KEY_CLIENT_KEY, cKey)
+	if cKey := strings.TrimSpace(sm.Token); cKey != "" {
+		sm.Config.Set(KEY_CLIENT_KEY, cKey)
 	}
-	if srv := strings.TrimSpace(smHost); srv != "" {
-		config.Set(KEY_HOSTNAME, srv)
+	if srv := strings.TrimSpace(sm.Hostname); srv != "" {
+		sm.Config.Set(KEY_HOSTNAME, srv)
 	}
 
-	sm := &SecretsManager{
-		Token:          smToken,
-		HostName:       smHost,
-		VerifySslCerts: verifySslCerts,
-		Config:         config,
+	// Make sure our public key id is set and pointing an existing key.
+	pkid := strings.TrimSpace(sm.Config.Get(KEY_SERVER_PUBLIC_KEY_ID))
+	if pkid == "" {
+		klog.Debug("Setting public key id to the default: " + defaultKeeperServerPublicKeyId)
+		sm.Config.Set(KEY_SERVER_PUBLIC_KEY_ID, defaultKeeperServerPublicKeyId)
+	} else if _, found := keeperServerPublicKeys[pkid]; !found {
+		klog.Debug(fmt.Sprintf("Public key id %s does not exists, set to default: %s", pkid, defaultKeeperServerPublicKeyId))
+		sm.Config.Set(KEY_SERVER_PUBLIC_KEY_ID, defaultKeeperServerPublicKeyId)
 	}
+
 	sm.init()
 	return sm
 }
@@ -139,42 +171,6 @@ func (c *SecretsManager) SetCache(cache ICache) {
 }
 
 func (c *SecretsManager) init() {
-	// klog.SetLogLevel(klog.ErrorLevel)
-
-	// Accept the env var KSM_SKIP_VERIFY
-	if ksv := strings.TrimSpace(os.Getenv("KSM_SKIP_VERIFY")); ksv != "" {
-		if ksvBool, err := StrToBool(ksv); err == nil {
-			// We need to flip the value of KSM_SKIP_VERIFY, if true, we want VerifySslCerts to be false.
-			c.VerifySslCerts = !ksvBool
-		} else {
-			klog.Error("error parsing boolean value from KSM_SKIP_VERIFY=" + ksv)
-		}
-	}
-
-	if c.Config == nil {
-		// If the config is not defined and the KSM_CONFIG env var exists, get the config from the env var.
-		if ksmConfig := strings.TrimSpace(os.Getenv("KSM_CONFIG")); ksmConfig != "" {
-			c.Config = NewMemoryKeyValueStorage(ksmConfig)
-			klog.Warning("Config initialised from env var KSM_CONFIG")
-		} else {
-			c.Config = NewFileKeyValueStorage()
-		}
-	}
-
-	c.loadConfig()
-
-	// Make sure our public key id is set and pointing an existing key.
-	pkid := strings.TrimSpace(c.Config.Get(KEY_SERVER_PUBLIC_KEY_ID))
-	if pkid == "" {
-		klog.Debug("Setting public key id to the default: " + defaultKeeperServerPublicKeyId)
-		c.Config.Set(KEY_SERVER_PUBLIC_KEY_ID, defaultKeeperServerPublicKeyId)
-	} else if _, found := keeperServerPublicKeys[pkid]; !found {
-		klog.Debug(fmt.Sprintf("Public key id %s does not exists, set to default: %s", pkid, defaultKeeperServerPublicKeyId))
-		c.Config.Set(KEY_SERVER_PUBLIC_KEY_ID, defaultKeeperServerPublicKeyId)
-	}
-}
-
-func (c *SecretsManager) loadConfig() {
 	clientId := strings.TrimSpace(c.Config.Get(KEY_CLIENT_ID))
 	if clientId != "" {
 		klog.Debug("Already bound")
@@ -392,19 +388,21 @@ func (c *SecretsManager) prepareCreatePayload(record *Record) (res *CreatePayloa
 
 	ownerPublicKey := strings.TrimSpace(c.Config.Get(KEY_OWNER_PUBLIC_KEY))
 	if ownerPublicKey == "" {
-		return nil, fmt.Errorf("unable to create record - application owner public key is missing from the configuration")
+		return nil, fmt.Errorf("unable to create record - owner key is missing. Looks like application was created using outdated client (Web Vault or Commander)")
+	}
+	ownerPublicKeyBytes := Base64ToBytes(ownerPublicKey)
+
+	if strings.TrimSpace(record.folderUid) == "" {
+		return nil, fmt.Errorf("unable to create record - missing folder UID")
+	}
+	if len(record.folderKeyBytes) == 0 {
+		return nil, fmt.Errorf("unable to create record - folder key for '%s' missing", record.folderUid)
 	}
 	if strings.TrimSpace(payload.ClientId) == "" {
 		return nil, fmt.Errorf("unable to create record - client Id is missing from the configuration")
 	}
 	if record == nil {
 		return nil, fmt.Errorf("unable to create record - missing record data")
-	}
-	if strings.TrimSpace(record.folderUid) == "" {
-		return nil, fmt.Errorf("unable to create record - missing folder UID")
-	}
-	if len(record.folderKeyBytes) == 0 {
-		return nil, fmt.Errorf("unable to create record - folder key for '%s' not found", record.folderUid)
 	}
 
 	// convert any record UID in Base64 encoding to UrlSafeBase64
@@ -415,7 +413,7 @@ func (c *SecretsManager) prepareCreatePayload(record *Record) (res *CreatePayloa
 
 	rawJsonBytes := StringToBytes(record.RawJson)
 	if encryptedRawJsonBytes, err := EncryptAesGcm(rawJsonBytes, record.RecordKeyBytes); err == nil {
-		payload.Data = BytesToUrlSafeStr(encryptedRawJsonBytes)
+		payload.Data = BytesToBase64(encryptedRawJsonBytes)
 	} else {
 		return nil, err
 	}
@@ -426,7 +424,7 @@ func (c *SecretsManager) prepareCreatePayload(record *Record) (res *CreatePayloa
 		return nil, err
 	}
 
-	if encryptedRecordKey, err := PublicEncrypt(record.RecordKeyBytes, Base64ToBytes(ownerPublicKey), nil); err == nil {
+	if encryptedRecordKey, err := PublicEncrypt(record.RecordKeyBytes, ownerPublicKeyBytes, nil); err == nil {
 		payload.RecordKey = BytesToBase64(encryptedRecordKey)
 	} else {
 		return nil, err
@@ -436,7 +434,7 @@ func (c *SecretsManager) prepareCreatePayload(record *Record) (res *CreatePayloa
 }
 
 func (c *SecretsManager) PostQuery(path string, payload interface{}) (body []byte, err error) {
-	keeperServer := GetServerHostname(c.HostName, c.Config)
+	keeperServer := GetServerHostname(c.Hostname, c.Config)
 	url := fmt.Sprintf("https://%s/api/rest/sm/v1/%s", keeperServer, path)
 	var transmissionKey *TransmissionKey
 	var ksmRs *KsmHttpResponse
@@ -615,18 +613,19 @@ func (c *SecretsManager) HandleHttpError(rs *http.Response, body []byte, httpErr
 	return
 }
 
-func (c *SecretsManager) fetchAndDecryptSecrets(recordFilter []string) (records []*Record, justBound bool, err error) {
-	records = []*Record{}
-	justBound = false
+func (c *SecretsManager) fetchAndDecryptSecrets(recordFilter []string) (smr *SecretsManagerResponse, err error) {
+	records := []*Record{}
+	folders := []*Folder{}
+	justBound := false
 
 	payload, err := c.prepareGetPayload(recordFilter)
 	if err != nil {
-		return records, justBound, err
+		return nil, err
 	}
 
 	decryptedResponseBytes, err := c.PostQuery("get_secret", payload)
 	if err != nil {
-		return records, justBound, err
+		return nil, err
 	}
 
 	decryptedResponseStr := BytesToString(decryptedResponseBytes)
@@ -637,7 +636,7 @@ func (c *SecretsManager) fetchAndDecryptSecrets(recordFilter []string) (records 
 		justBound = true
 		clientKey := UrlSafeStrToBytes(c.Config.Get(KEY_CLIENT_KEY))
 		if len(clientKey) == 0 {
-			return records, justBound, errors.New("client key is missing from the storage")
+			return nil, errors.New("client key is missing from the storage")
 		}
 		encryptedMasterKey := UrlSafeStrToBytes(encryptedAppKey.(string))
 		if secretKey, err = Decrypt(encryptedMasterKey, clientKey); err == nil {
@@ -654,7 +653,7 @@ func (c *SecretsManager) fetchAndDecryptSecrets(recordFilter []string) (records 
 	} else {
 		secretKey = Base64ToBytes(c.Config.Get(KEY_APP_KEY))
 		if len(secretKey) == 0 {
-			return records, justBound, errors.New("app key is missing from the storage")
+			return nil, errors.New("app key is missing from the storage")
 		}
 	}
 
@@ -683,6 +682,7 @@ func (c *SecretsManager) fetchAndDecryptSecrets(recordFilter []string) (records 
 				folder := NewFolderFromJson(f.(map[string]interface{}), secretKey)
 				if f != nil {
 					records = append(records, folder.Records()...)
+					folders = append(folders, folder)
 				} else {
 					klog.Error("error parsing folder JSON: ", f)
 				}
@@ -696,23 +696,65 @@ func (c *SecretsManager) fetchAndDecryptSecrets(recordFilter []string) (records 
 	klog.Debug(fmt.Sprintf("Folder count: %d", folderCount))
 	klog.Debug(fmt.Sprintf("Total record count: %d", len(records)))
 
-	return records, justBound, nil
+	smResponse := SecretsManagerResponse{
+		Records:   records,
+		Folders:   folders,
+		JustBound: justBound,
+	}
+
+	if appDataB64, found := decryptedResponseDict["appData"]; found && appDataB64 != nil && fmt.Sprintf("%v", appDataB64) != "" {
+		appDataBytes := UrlSafeStrToBytes(appDataB64.(string))
+		appKey := Base64ToBytes(c.Config.Get(KEY_APP_KEY))
+		if appDataJson, err := Decrypt(appDataBytes, appKey); err == nil {
+			appData := AppData{}
+			if err := json.Unmarshal([]byte(appDataJson), &appData); err == nil {
+				smResponse.AppData = appData
+			} else {
+				klog.Error("Error deserializing appData from JSON: " + err.Error())
+			}
+		} else {
+			klog.Warning("Failed to decrypt appData - " + err.Error())
+		}
+	}
+	if expiresOn, found := decryptedResponseDict["expiresOn"]; found && expiresOn != nil && fmt.Sprintf("%v", expiresOn) != "" {
+		if i, err := strconv.ParseInt(fmt.Sprintf("%v", expiresOn), 10, 0); err == nil {
+			smResponse.ExpiresOn = i
+		} else {
+			klog.Error("Error parsing ExpiresOn: " + err.Error())
+		}
+	}
+	if warnings, found := decryptedResponseDict["warnings"]; found && warnings != nil && fmt.Sprintf("%v", warnings) != "" {
+		smResponse.Warnings = fmt.Sprintf("%v", warnings)
+	}
+
+	return &smResponse, nil
 }
 
-func (c *SecretsManager) GetSecrets(uids []string) (records []*Record, err error) {
+func (c *SecretsManager) getSecretsFullResponse(uids []string) (records []*Record, folders []*Folder, err error) {
 	// Retrieve all records associated with the given application
-	recordsResp, justBound, err := c.fetchAndDecryptSecrets(uids)
+	recordsResp, err := c.fetchAndDecryptSecrets(uids)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if justBound {
-		recordsResp, _, err = c.fetchAndDecryptSecrets(uids)
+	if recordsResp.JustBound {
+		recordsResp, err = c.fetchAndDecryptSecrets(uids)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
-	return recordsResp, nil
+	// Log warnings we got from the server
+	// Will only be displayed if logging is enabled:
+	if recordsResp.Warnings != "" {
+		klog.Warning(recordsResp.Warnings)
+	}
+
+	return recordsResp.Records, recordsResp.Folders, nil
+}
+
+func (c *SecretsManager) GetSecrets(uids []string) (records []*Record, err error) {
+	records, _, err = c.getSecretsFullResponse(uids)
+	return records, err
 }
 
 func (c *SecretsManager) Save(record *Record) (err error) {
@@ -729,6 +771,48 @@ func (c *SecretsManager) Save(record *Record) (err error) {
 }
 
 func (c *SecretsManager) CreateSecret(record *Record) (recordUid string, err error) {
+	payload, err := c.prepareCreatePayload(record)
+	if err != nil {
+		return "", err
+	}
+
+	_, err = c.PostQuery("create_secret", payload)
+	return payload.RecordUid, err
+}
+
+// CreateSecretWithRecordData creates new record using recordUID, folderUID and record data provided
+// Note: if param recUid is empty - new auto generated record UID will be used
+func (c *SecretsManager) CreateSecretWithRecordData(recUid, folderUid string, recordData *RecordCreate) (recordUid string, err error) {
+	// Backend only needs a JSON string of the record, so we have different ways of handing data:
+	//   - providing data as JSON string
+	//   - providing data as map[string]interface{}
+	//   - providing data as CreateRecord struct
+	// Here we will use CreateRecord objects
+
+	if recordData == nil || recordData.RecordType == "" || recordData.Title == "" {
+		return "", errors.New("new record data has to be a valid 'RecordCreate' object")
+	}
+
+	// Since we don't know folder's key where this record will be placed in,
+	// currently we have to retrieve all data that is share to this device/client
+	// and look for the folder's key in the returned folder data
+
+	_, folders, err := c.getSecretsFullResponse([]string{})
+	if err != nil {
+		return "", err
+	}
+
+	foundFolder := GetFolderByKey(folderUid, folders)
+	if foundFolder == nil {
+		return "", fmt.Errorf("folder uid='%s' was not retrieved. If you are creating a record in a "+
+			"shared folder that you know exists, make sure that at least one record is present in "+
+			"the folder prior to adding a new record", folderUid)
+	}
+
+	record := NewRecordFromRecordDataWithUid(recUid, recordData, foundFolder)
+	if record == nil {
+		return "", fmt.Errorf("failed to create new record from record data: %v", recordData)
+	}
 	payload, err := c.prepareCreatePayload(record)
 	if err != nil {
 		return "", err

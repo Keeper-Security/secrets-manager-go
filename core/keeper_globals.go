@@ -9,8 +9,8 @@ import (
 
 const (
 	versionMajor                 string = "16"
-	version                      string = "16.2.1"
-	keeperSecretsManagerClientId string = "mg16.2.1" // Golang client ID starts with "mg" + version
+	version                      string = "16.2.2"
+	keeperSecretsManagerClientId string = "mg16.2.2" // Golang client ID starts with "mg" + version
 	defaultKeeperHostname        string = "keepersecurity.com"
 	clientIdHashTag              string = "KEEPER_SECRETS_MANAGER_CLIENT_ID" // Tag for hashing the client key to client id
 )
@@ -30,7 +30,7 @@ func GetClientVersion(hardcode bool) string {
 	// For example, module version of 0.1.23 would create a client version would be 16.1.23.
 
 	// Get the version of the keeper secrets manager core
-	result := versionMajor + ".1.0"
+	result := versionMajor + ".2.0"
 
 	// Allow the default version to be hard coded. If not build the client version from the module version.
 	if !hardcode {

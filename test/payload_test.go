@@ -8,7 +8,7 @@ import (
 
 func TestTransmissionKey(t *testing.T) {
 	config := ksm.NewMemoryKeyValueStorage(`{ "clientKey": "1234", "hostname": "keepersecurity.com" }`)
-	sm := ksm.NewSecretsManagerFromConfig(config)
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config})
 	for _, keyNum := range []string{"7", "8", "9", "10", "11", "12"} {
 		transmissionKey := sm.GenerateTransmissionKey(keyNum)
 		if keyNum != transmissionKey.PublicKeyId {

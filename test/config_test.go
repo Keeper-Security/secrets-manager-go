@@ -9,24 +9,6 @@ import (
 	ksm "github.com/keeper-security/secrets-manager-go/core"
 )
 
-const (
-	fakeJsonConfigStr string = `
-{
-    "appKey": "MY APP KEY",
-    "clientId": "MY CLIENT ID",
-    "hostname": "fake.keepersecurity.com",
-    "privateKey": "MY PRIVATE KEY",
-    "serverPublicKeyId": "7"
-}
-`
-
-	// The above JSON in base64:
-	// eyJhcHBLZXkiOiJNWSBBUFAgS0VZIiwiY2xpZW50SWQiOiJNWSBDTElFTlQgSUQiLCJob3N0bmFtZSI6ImZha2Uua2VlcGVyc2VjdXJpdHkuY29tIiwicHJpdmF0ZUtleSI6Ik1ZIFBSSVZBVEUgS0VZIiwic2VydmVyUHVibGljS2V5SWQiOiI3In0=
-	fakeBase64ConfigStr string = "eyJhcHBLZXkiOiJNWSBBUFAgS0VZIiwiY2xpZW50SWQiOiJNWSBDTElFTlQgSUQiLCJob3N0bmFtZSI6" +
-		"ImZha2Uua2VlcGVyc2VjdXJpdHkuY29tIiwicHJpdmF0ZUtleSI6Ik1ZIFBSSVZBVEUgS0VZIiwic2Vy" +
-		"dmVyUHVibGljS2V5SWQiOiI3In0="
-)
-
 func TestMissingConfig(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -53,7 +35,7 @@ func TestMissingConfig(t *testing.T) {
 	defer os.RemoveAll(tempDirName)
 
 	if err := os.Chdir(tempDirName); err == nil {
-		sm := ksm.NewSecretsManager()
+		sm := ksm.NewSecretsManager(nil)
 		t.Errorf("Found config file, should be missing. Config is empty: %t", sm.Config.IsEmpty())
 	} else {
 		t.Error(err.Error())
@@ -79,13 +61,15 @@ func TestDefaultLoadFromJson(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDirName)
 
+	mockConfig := MockConfig{}.MakeConfig(nil, "", "")
+	configJson := MockConfig{}.MakeJson(mockConfig)
 	if err := os.Chdir(tempDirName); err == nil {
-		if err := ioutil.WriteFile(defaultConfigName, []byte(fakeJsonConfigStr), 0644); err == nil {
-			sm := ksm.NewSecretsManager()
-			if sm.Config.Get(ksm.KEY_HOSTNAME) != "fake.keepersecurity.com" {
+		if err := ioutil.WriteFile(defaultConfigName, []byte(configJson), 0644); err == nil {
+			sm := ksm.NewSecretsManager(nil)
+			if sm.Config.Get(ksm.KEY_HOSTNAME) != mockConfig["hostname"] {
 				t.Error("did not get correct hostname")
 			}
-			if sm.Config.Get(ksm.KEY_APP_KEY) != "MY APP KEY" {
+			if sm.Config.Get(ksm.KEY_APP_KEY) != mockConfig["appKey"] {
 				t.Error("did not get correct app key")
 			}
 		} else {
@@ -115,11 +99,13 @@ func TestOverwriteViaArgs(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDirName)
 
+	mockConfig := MockConfig{}.MakeConfig(nil, "", "")
+	configJson := MockConfig{}.MakeJson(mockConfig)
 	if err := os.Chdir(tempDirName); err == nil {
-		if err := ioutil.WriteFile(defaultConfigName, []byte(fakeJsonConfigStr), 0644); err == nil {
+		if err := ioutil.WriteFile(defaultConfigName, []byte(configJson), 0644); err == nil {
 			// Pass in the client key and hostname
-			sm := ksm.NewSecretsManagerFromSettings("ABC123", "fake.keepersecurity.com", true)
-			if sm.Config.Get(ksm.KEY_HOSTNAME) != "fake.keepersecurity.com" {
+			sm := ksm.NewSecretsManager(&ksm.ClientOptions{Token: "ABC123", Hostname: "localhost"})
+			if sm.Config.Get(ksm.KEY_HOSTNAME) != "localhost" {
 				t.Error("did not get correct hostname")
 			}
 			if sm.Config.Get(ksm.KEY_CLIENT_KEY) != "" {
@@ -134,42 +120,44 @@ func TestOverwriteViaArgs(t *testing.T) {
 }
 
 func TestOnetimeTokenFormatsAbbrev(t *testing.T) {
-	token := "US:ABC123"
-	hostname := "fake.keepersecurity.com"
-	config := ksm.NewMemoryKeyValueStorage(fakeBase64ConfigStr)
-	secretsManager := ksm.NewSecretsManagerFromFullSetup(token, hostname, true, config)
+	mockConfig := MockConfig{}.MakeConfig([]string{"clientKey"}, "", "")
+	base64ConfigStr := MockConfig{}.MakeBase64(mockConfig)
 
-	if secretsManager.HostName != "keepersecurity.com" {
+	config := ksm.NewMemoryKeyValueStorage(base64ConfigStr)
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Token: "US:ABC123", Hostname: "localhost", Config: config})
+
+	if sm.Hostname != "keepersecurity.com" {
 		t.Error("did not get correct server")
 	}
-	if strings.TrimSpace(secretsManager.Token) != "ABC123" {
+	if strings.TrimSpace(sm.Token) != "ABC123" {
 		t.Error("One time token/Client key don't match")
 	}
 
-	if secretsManager.Config.Get(ksm.KEY_HOSTNAME) != "keepersecurity.com" {
+	if sm.Config.Get(ksm.KEY_HOSTNAME) != "keepersecurity.com" {
 		t.Error("did not get correct server")
 	}
-	if secretsManager.Config.Get(ksm.KEY_CLIENT_KEY) != "" {
+	if sm.Config.Get(ksm.KEY_CLIENT_KEY) != "" {
 		t.Error("Client key is still present")
 	}
 }
 func TestOnetimeTokenFormatsHostname(t *testing.T) {
-	token := "fake.keepersecurity.com:ABC123"
-	hostname := "company.com"
-	config := ksm.NewMemoryKeyValueStorage(fakeBase64ConfigStr)
-	secretsManager := ksm.NewSecretsManagerFromFullSetup(token, hostname, true, config)
+	mockConfig := MockConfig{}.MakeConfig([]string{"clientKey"}, "", "")
+	base64ConfigStr := MockConfig{}.MakeBase64(mockConfig)
 
-	if secretsManager.HostName != "fake.keepersecurity.com" {
+	config := ksm.NewMemoryKeyValueStorage(base64ConfigStr)
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Token: "fake.keepersecurity.com:ABC123", Hostname: "localhost", Config: config})
+
+	if sm.Hostname != "fake.keepersecurity.com" {
 		t.Error("did not get correct server")
 	}
-	if strings.TrimSpace(secretsManager.Token) != "ABC123" {
+	if strings.TrimSpace(sm.Token) != "ABC123" {
 		t.Error("One time token/Client key don't match")
 	}
 
-	if secretsManager.Config.Get(ksm.KEY_HOSTNAME) != "fake.keepersecurity.com" {
+	if sm.Config.Get(ksm.KEY_HOSTNAME) != "fake.keepersecurity.com" {
 		t.Error("did not get correct server")
 	}
-	if secretsManager.Config.Get(ksm.KEY_CLIENT_KEY) != "" {
+	if sm.Config.Get(ksm.KEY_CLIENT_KEY) != "" {
 		t.Error("Client key is still present")
 	}
 }
@@ -218,7 +206,7 @@ func TestPassInConfig(t *testing.T) {
 		}
 
 		// Pass in the config
-		sm := ksm.NewSecretsManagerFromConfig(config)
+		sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config})
 
 		// Is not bound, client id and private key will be generated and overwrite existing
 		if sm.Config.Get(ksm.KEY_CLIENT_ID) == "" {
@@ -260,7 +248,7 @@ func TestInMemoryConfig(t *testing.T) {
 	}
 
 	// Pass in the config
-	sm := ksm.NewSecretsManagerFromConfig(config)
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config})
 
 	// not bound, client id and private key will be generated and overwrite existing
 	if sm.Config.Get(ksm.KEY_CLIENT_ID) == "" {
@@ -284,26 +272,28 @@ func TestPublicKeyId(t *testing.T) {
 	config.Set(ksm.KEY_PRIVATE_KEY, "MY PRIVATE KEY")
 
 	// Test the default setting of the key id if missing
-	sm := ksm.NewSecretsManagerFromConfig(config)
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config})
 	if sm.DefaultKeeperServerPublicKeyId() != sm.Config.Get(ksm.KEY_SERVER_PUBLIC_KEY_ID) {
 		t.Error("the public key is not set the default")
 	}
 
 	// Test if the config is edited and a bad key is entered that we go back to the default.
 	config.Set(ksm.KEY_SERVER_PUBLIC_KEY_ID, "1_000_000")
-	sm = ksm.NewSecretsManagerFromConfig(config)
+	sm = ksm.NewSecretsManager(&ksm.ClientOptions{Config: config})
 	if sm.DefaultKeeperServerPublicKeyId() != sm.Config.Get(ksm.KEY_SERVER_PUBLIC_KEY_ID) {
 		t.Error("the public key is not set the default after bad key id")
 	}
 }
 
 func TestInMemoryBase64Config(t *testing.T) {
-	secretsManager := ksm.NewSecretsManagerFromConfig(ksm.NewMemoryKeyValueStorage(fakeBase64ConfigStr))
-	dictConfig := secretsManager.Config.ReadStorage()
+	mockConfig := MockConfig{}.MakeConfig([]string{"clientKey"}, "", "")
+	base64ConfigStr := MockConfig{}.MakeBase64(mockConfig)
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: ksm.NewMemoryKeyValueStorage(base64ConfigStr)})
+	dictConfig := sm.Config.ReadStorage()
 
 	success := false
 	if key, ok := dictConfig[string(ksm.KEY_APP_KEY)]; ok {
-		if val, ok := key.(string); ok && val == "MY APP KEY" {
+		if val, ok := key.(string); ok && val == mockConfig["appKey"] {
 			success = true
 		}
 	}
@@ -313,7 +303,7 @@ func TestInMemoryBase64Config(t *testing.T) {
 
 	success = false
 	if key, ok := dictConfig[string(ksm.KEY_CLIENT_ID)]; ok {
-		if val, ok := key.(string); ok && val == "MY CLIENT ID" {
+		if val, ok := key.(string); ok && val == mockConfig["clientId"] {
 			success = true
 		}
 	}
@@ -323,7 +313,7 @@ func TestInMemoryBase64Config(t *testing.T) {
 
 	success = false
 	if key, ok := dictConfig[string(ksm.KEY_HOSTNAME)]; ok {
-		if val, ok := key.(string); ok && val == "fake.keepersecurity.com" {
+		if val, ok := key.(string); ok && val == mockConfig["hostname"] {
 			success = true
 		}
 	}
@@ -333,7 +323,7 @@ func TestInMemoryBase64Config(t *testing.T) {
 
 	success = false
 	if key, ok := dictConfig[string(ksm.KEY_PRIVATE_KEY)]; ok {
-		if val, ok := key.(string); ok && val == "MY PRIVATE KEY" {
+		if val, ok := key.(string); ok && val == mockConfig["privateKey"] {
 			success = true
 		}
 	}
@@ -343,7 +333,7 @@ func TestInMemoryBase64Config(t *testing.T) {
 
 	success = false
 	if key, ok := dictConfig[string(ksm.KEY_SERVER_PUBLIC_KEY_ID)]; ok {
-		if val, ok := key.(string); ok && val == "7" {
+		if val, ok := key.(string); ok && val == mockConfig["serverPublicKeyId"] {
 			success = true
 		}
 	}
@@ -352,39 +342,42 @@ func TestInMemoryBase64Config(t *testing.T) {
 	}
 
 	// Pass in the config
-	secretsManager = ksm.NewSecretsManagerFromConfig(secretsManager.Config)
+	sm = ksm.NewSecretsManager(&ksm.ClientOptions{Config: sm.Config})
 	// not bound, client id and private key will be generated and overwrite existing
-	if secretsManager.Config.Get(ksm.KEY_CLIENT_ID) == "" {
+	if sm.Config.Get(ksm.KEY_CLIENT_ID) == "" {
 		t.Error("did not get a client id")
 	}
-	if secretsManager.Config.Get(ksm.KEY_PRIVATE_KEY) == "" {
+	if sm.Config.Get(ksm.KEY_PRIVATE_KEY) == "" {
 		t.Error("did not get a private key")
 	}
-	if secretsManager.Config.Get(ksm.KEY_APP_KEY) == "" {
+	if sm.Config.Get(ksm.KEY_APP_KEY) == "" {
 		t.Error("did not get an app key")
 	}
-	if secretsManager.Config.Get(ksm.KEY_HOSTNAME) == "" {
+	if sm.Config.Get(ksm.KEY_HOSTNAME) == "" {
 		t.Error("did not get a hostname")
 	}
-	if secretsManager.Config.Get(ksm.KEY_SERVER_PUBLIC_KEY_ID) == "" {
+	if sm.Config.Get(ksm.KEY_SERVER_PUBLIC_KEY_ID) == "" {
 		t.Error("did not get a public key id")
 	}
 
 	// Client key (one time token) should be removed
-	if secretsManager.Config.Get(ksm.KEY_CLIENT_KEY) != "" {
+	if sm.Config.Get(ksm.KEY_CLIENT_KEY) != "" {
 		t.Error("found client key (one time token), should be missing.")
 	}
 }
 
 func TestInMemoryBase64ConfigViaEnv(t *testing.T) {
+	mockConfig := MockConfig{}.MakeConfig([]string{"clientKey"}, "", "")
+	base64ConfigStr := MockConfig{}.MakeBase64(mockConfig)
+
 	// Put the config into env var,
-	os.Setenv("KSM_CONFIG", fakeBase64ConfigStr)
-	secretsManager := ksm.NewSecretsManager()
-	dictConfig := secretsManager.Config.ReadStorage()
+	os.Setenv("KSM_CONFIG", base64ConfigStr)
+	sm := ksm.NewSecretsManager(nil)
+	dictConfig := sm.Config.ReadStorage()
 
 	success := false
 	if key, ok := dictConfig[string(ksm.KEY_APP_KEY)]; ok {
-		if val, ok := key.(string); ok && val == "MY APP KEY" {
+		if val, ok := key.(string); ok && val == mockConfig["appKey"] {
 			success = true
 		}
 	}
@@ -394,7 +387,7 @@ func TestInMemoryBase64ConfigViaEnv(t *testing.T) {
 
 	success = false
 	if key, ok := dictConfig[string(ksm.KEY_CLIENT_ID)]; ok {
-		if val, ok := key.(string); ok && val == "MY CLIENT ID" {
+		if val, ok := key.(string); ok && val == mockConfig["clientId"] {
 			success = true
 		}
 	}
@@ -404,7 +397,7 @@ func TestInMemoryBase64ConfigViaEnv(t *testing.T) {
 
 	success = false
 	if key, ok := dictConfig[string(ksm.KEY_HOSTNAME)]; ok {
-		if val, ok := key.(string); ok && val == "fake.keepersecurity.com" {
+		if val, ok := key.(string); ok && val == mockConfig["hostname"] {
 			success = true
 		}
 	}
@@ -414,7 +407,7 @@ func TestInMemoryBase64ConfigViaEnv(t *testing.T) {
 
 	success = false
 	if key, ok := dictConfig[string(ksm.KEY_PRIVATE_KEY)]; ok {
-		if val, ok := key.(string); ok && val == "MY PRIVATE KEY" {
+		if val, ok := key.(string); ok && val == mockConfig["privateKey"] {
 			success = true
 		}
 	}
@@ -424,7 +417,7 @@ func TestInMemoryBase64ConfigViaEnv(t *testing.T) {
 
 	success = false
 	if key, ok := dictConfig[string(ksm.KEY_SERVER_PUBLIC_KEY_ID)]; ok {
-		if val, ok := key.(string); ok && val == "7" {
+		if val, ok := key.(string); ok && val == mockConfig["serverPublicKeyId"] {
 			success = true
 		}
 	}
@@ -433,26 +426,26 @@ func TestInMemoryBase64ConfigViaEnv(t *testing.T) {
 	}
 
 	// Pass in the config
-	secretsManager = ksm.NewSecretsManagerFromConfig(secretsManager.Config)
+	sm = ksm.NewSecretsManager(&ksm.ClientOptions{Config: sm.Config})
 	// not bound, client id and private key will be generated and overwrite existing
-	if secretsManager.Config.Get(ksm.KEY_CLIENT_ID) == "" {
+	if sm.Config.Get(ksm.KEY_CLIENT_ID) == "" {
 		t.Error("did not get a client id")
 	}
-	if secretsManager.Config.Get(ksm.KEY_PRIVATE_KEY) == "" {
+	if sm.Config.Get(ksm.KEY_PRIVATE_KEY) == "" {
 		t.Error("did not get a private key")
 	}
-	if secretsManager.Config.Get(ksm.KEY_APP_KEY) == "" {
+	if sm.Config.Get(ksm.KEY_APP_KEY) == "" {
 		t.Error("did not get an app key")
 	}
-	if secretsManager.Config.Get(ksm.KEY_HOSTNAME) == "" {
+	if sm.Config.Get(ksm.KEY_HOSTNAME) == "" {
 		t.Error("did not get a hostname")
 	}
-	if secretsManager.Config.Get(ksm.KEY_SERVER_PUBLIC_KEY_ID) == "" {
+	if sm.Config.Get(ksm.KEY_SERVER_PUBLIC_KEY_ID) == "" {
 		t.Error("did not get a public key id")
 	}
 
 	// Client key (one time token) should be removed
-	if secretsManager.Config.Get(ksm.KEY_CLIENT_KEY) != "" {
+	if sm.Config.Get(ksm.KEY_CLIENT_KEY) != "" {
 		t.Error("found client key (one time token), should be missing.")
 	}
 }

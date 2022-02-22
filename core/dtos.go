@@ -1,12 +1,16 @@
 package core
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
+	"time"
 
 	klog "github.com/keeper-security/secrets-manager-go/core/logger"
 )
@@ -345,6 +349,54 @@ func (r *Record) GetCustomFieldValueByLabel(fieldLabel string) string {
 		result = strings.Join(values, ", ")
 	}
 	return result
+}
+
+func NewRecordFromRecordData(recordData *RecordCreate, folder *Folder) *Record {
+	recordKey, err := GenerateRandomBytes(32)
+	if err != nil {
+		return nil
+	}
+	recordUid, err := GenerateRandomBytes(16)
+	if err != nil {
+		return nil
+	}
+
+	return &Record{
+		RecordKeyBytes: recordKey,
+		Uid:            BytesToUrlSafeStr(recordUid),
+		folderKeyBytes: folder.key,
+		folderUid:      folder.uid,
+		recordType:     recordData.RecordType,
+		RawJson:        recordData.ToJson(),
+		RecordDict:     recordData.ToDict(),
+	}
+}
+
+func NewRecordFromRecordDataWithUid(recordUid string, recordData *RecordCreate, folder *Folder) *Record {
+	// recordUid must be a base64 url safe encoded string (UID binary length is 16 bytes)
+	ruid := UrlSafeStrToBytes(recordUid)
+	if len(ruid) != 16 {
+		if newUid, err := GenerateRandomBytes(16); err == nil {
+			ruid = newUid
+		} else {
+			return nil
+		}
+	}
+
+	recordKey, err := GenerateRandomBytes(32)
+	if err != nil {
+		return nil
+	}
+
+	return &Record{
+		RecordKeyBytes: recordKey,
+		Uid:            BytesToUrlSafeStr(ruid),
+		folderKeyBytes: folder.key,
+		folderUid:      folder.uid,
+		recordType:     recordData.RecordType,
+		RawJson:        recordData.ToJson(),
+		RecordDict:     recordData.ToDict(),
+	}
 }
 
 func NewRecordFromJson(recordDict map[string]interface{}, secretKey []byte, folderUid string) *Record {
@@ -763,7 +815,7 @@ func (r *Record) Print() {
 
 type Folder struct {
 	uid           string
-	folderKey     []byte
+	key           []byte
 	data          map[string]interface{}
 	folderRecords []map[string]interface{}
 }
@@ -776,7 +828,7 @@ func NewFolderFromJson(folderDict map[string]interface{}, secretKey []byte) *Fol
 		folder.uid = strings.TrimSpace(uid.(string))
 		if folderKeyEnc, ok := folderDict["folderKey"]; ok {
 			if folderKey, err := Decrypt(Base64ToBytes(folderKeyEnc.(string)), secretKey); err == nil {
-				folder.folderKey = folderKey
+				folder.key = folderKey
 				if folderRecords, ok := folderDict["records"]; ok {
 					if iFolderRecords, ok := folderRecords.([]interface{}); ok {
 						for i := range iFolderRecords {
@@ -804,7 +856,7 @@ func (f *Folder) Records() []*Record {
 	records := []*Record{}
 	if f.folderRecords != nil {
 		for _, r := range f.folderRecords {
-			if record := NewRecordFromJson(r, f.folderKey, f.uid); record.Uid != "" {
+			if record := NewRecordFromJson(r, f.key, f.uid); record.Uid != "" {
 				records = append(records, record)
 			} else {
 				klog.Error("error parsing folder record: ", r)
@@ -963,4 +1015,250 @@ func (f *KeeperFile) SaveFile(path string, createFolders bool) bool {
 
 func (f *KeeperFile) ToString() string {
 	return fmt.Sprintf("[KeeperFile - name: %s, title: %s]", f.Name, f.Title)
+}
+
+type RecordField struct {
+	Type     string
+	Label    string
+	Value    []interface{}
+	Required bool
+}
+
+func NewRecordField(fieldType, label string, required bool, value interface{}) *RecordField {
+	recordField := &RecordField{
+		Type:     fieldType,
+		Label:    label,
+		Required: required,
+	}
+	if iValue, ok := value.([]interface{}); ok {
+		recordField.Value = iValue
+	} else if value == nil {
+		recordField.Value = []interface{}{}
+	} else {
+		recordField.Value = []interface{}{value}
+	}
+	return recordField
+}
+
+type RecordCreate struct {
+	RecordType string        `json:"type,omitempty"`
+	Title      string        `json:"title,omitempty"`
+	Notes      string        `json:"notes,omitempty"`
+	Fields     []interface{} `json:"fields,omitempty"`
+	Custom     []interface{} `json:"custom,omitempty"`
+}
+
+func NewRecordCreate(recordType, title string) *RecordCreate {
+	return &RecordCreate{
+		RecordType: recordType,
+		Title:      title,
+		Fields:     []interface{}{},
+		Custom:     []interface{}{},
+	}
+}
+
+func NewRecordCreateFromJson(recordJson string) *RecordCreate {
+	// NB! this will silently ignore any unknown record and field attributes
+	// NB! Do not serialize back to record or field for update - use only for record create
+	rc := getRecordCreateFromJson(recordJson)
+	if rc != nil {
+		fields := []interface{}{}
+		custom := []interface{}{}
+		for _, fMap := range rc.Fields {
+			if fld, err := convertToKeeperRecordField(fMap); err == nil {
+				fields = append(fields, fld)
+			} else {
+				klog.Error("skipped field definition due to conversion error(s) - " + err.Error())
+			}
+		}
+		for _, fMap := range rc.Custom {
+			if fld, err := convertToKeeperRecordField(fMap); err == nil {
+				custom = append(custom, fld)
+			} else {
+				klog.Error("skipped custom field definition due to conversion error(s) - " + err.Error())
+			}
+		}
+		rc.Fields = fields
+		rc.Custom = custom
+	}
+	return rc
+}
+
+func getRecordCreateFromJson(jsonData string) *RecordCreate {
+	bytes := []byte(jsonData)
+	res := RecordCreate{}
+
+	if err := json.Unmarshal(bytes, &res); err != nil {
+		klog.Error("Error deserializing RecordCreate from JSON: " + err.Error())
+		return nil
+	}
+	return &res
+}
+
+func convertToKeeperRecordField(fieldData interface{}) (interface{}, error) {
+	if fieldData == nil {
+		return nil, errors.New("cannot convert empty field data")
+	}
+	fieldTypes := "|login|password|url|fileRef|oneTimeCode|name|birthDate|date|expirationDate|text|securityQuestion|multiline|email|cardRef|addressRef|pinCode|phone|secret|note|accountNumber|paymentCard|bankAccount|keyPair|host|address|licenseNumber|"
+	if fMap, ok := fieldData.(map[string]interface{}); ok {
+		if fType, found := fMap["type"]; found {
+			if sType, ok := fType.(string); ok && strings.Contains(fieldTypes, "|"+sType+"|") {
+				return getKeeperRecordField(sType, fMap)
+			} else {
+				return nil, fmt.Errorf("unknown field type %v", fMap)
+			}
+		} else {
+			return nil, fmt.Errorf("field type missing in field data %v", fieldData)
+		}
+	} else {
+		return nil, fmt.Errorf("expected format for field data %v", fieldData)
+	}
+}
+
+func (r RecordCreate) ToDict() map[string]interface{} {
+	recDict := map[string]interface{}{
+		"type":   r.RecordType,
+		"title":  r.Title,
+		"fields": r.Fields,
+	}
+	if r.Notes != "" {
+		recDict["notes"] = r.Notes
+	}
+	if len(r.Custom) > 0 {
+		recDict["custom"] = r.Custom
+	}
+	return recDict
+}
+
+func (r RecordCreate) ToJson() string {
+	return DictToJsonWithDefultIndent(r.ToDict())
+}
+
+func (r RecordCreate) getFieldsByType(field interface{}, single bool) []interface{} {
+	result := []interface{}{}
+	if field == nil {
+		return result
+	}
+
+	fieldPtr := getFieldPtr(field)
+	if fieldPtr == nil {
+		return result
+	}
+
+	iType := reflect.TypeOf(fieldPtr)
+	for i, f := range r.Fields {
+		fptr := getFieldPtr(f)
+		if fType := reflect.TypeOf(fptr); iType == fType {
+			result = append(result, fptr)
+			if reflect.TypeOf(f).Kind() != reflect.Ptr {
+				r.Fields[i] = fptr
+			}
+			if single {
+				return result
+			}
+		}
+	}
+	for i, f := range r.Custom {
+		fptr := getFieldPtr(f)
+		if fType := reflect.TypeOf(fptr); iType == fType {
+			result = append(result, fptr)
+			if reflect.TypeOf(f).Kind() != reflect.Ptr {
+				r.Custom[i] = fptr
+			}
+			if single {
+				return result
+			}
+		}
+	}
+	return result
+}
+
+// GetFieldsByType returns all fields of the same type as field param
+// The search goes first through fields[] then custom[]
+// Note: Method returns pointers so any value modifications are reflected directly in the record
+func (r RecordCreate) GetFieldsByType(field interface{}) []interface{} {
+	result := []interface{}{}
+	if field == nil {
+		return result
+	}
+
+	if records := r.getFieldsByType(field, false); records == nil {
+		return result
+	} else {
+		return records
+	}
+}
+
+// GetFieldByType returns first found field of the same type as field param
+// The search goes first through fields[] then custom[]
+// Note: Method returns a pointer so any value modifications are reflected directly in the record
+func (r RecordCreate) GetFieldByType(field interface{}) interface{} {
+	var result interface{}
+	if field == nil {
+		return result
+	}
+
+	if records := r.getFieldsByType(field, true); len(records) == 0 {
+		return result
+	} else {
+		return records[0]
+	}
+}
+
+// Return a pointer to the supplied struct via interface{}
+func toFieldPtr(obj interface{}) interface{} {
+	vp := reflect.New(reflect.TypeOf(obj))
+	vp.Elem().Set(reflect.ValueOf(obj))
+	return vp.Interface()
+}
+
+func getFieldPtr(field interface{}) interface{} {
+	// already pointer type
+	if fType := reflect.TypeOf(field); fType.Kind() == reflect.Ptr {
+		return field
+	}
+
+	// struct - passed by value, get pointer
+	switch field.(type) {
+	case nil:
+		return nil
+	default:
+		return toFieldPtr(field)
+	}
+}
+
+// Application info
+type AppData struct {
+	Title   string `json:"title,omitempty"`
+	AppType string `json:"type,omitempty"`
+}
+
+func NewAppData(title, appType string) *AppData {
+	return &AppData{
+		Title:   title,
+		AppType: appType,
+	}
+}
+
+// Server response contained details about the application and the records
+// that were requested to be returned
+type SecretsManagerResponse struct {
+	AppData   AppData
+	Folders   []*Folder
+	Records   []*Record
+	ExpiresOn int64
+	Warnings  string
+	JustBound bool
+	// AppOwnerPublicKey string
+	// EncryptedAppKey   string
+}
+
+// ExpiresOnStr retrieves string formatted expiration date
+// if dateFormat is empty default format is used: "%Y-%m-%d %H:%M:%S"
+func (r SecretsManagerResponse) ExpiresOnStr(dateFormat string) string {
+	unixtimeSeconds := r.ExpiresOn / 1000
+	return time.Unix(unixtimeSeconds, 0).Format("2006-01-02 15:04:05")
+	// "2006-01-02 15:04:05" = "%Y-%m-%d %H:%M:%S"
+	// RFC3339 = "2006-01-02T15:04:05Z07:00"
+	// RFC3339Nano = "2006-01-02T15:04:05.999999999Z07:00"
 }
