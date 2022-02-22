@@ -146,3 +146,12 @@ secretsManager.Save(secretToUpdate)
 ```
 
 For additional information please check our detailed [Go SDK docs](https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/golang-sdk) for Keeper Secrets Manager.
+
+### Documentation
+[Secrets Manager Guide](https://docs.keeper.io/secrets-manager/secrets-manager/overview)
+
+[Enterprise Admin Guide](https://docs.keeper.io/enterprise-guide/)
+
+[Keeper Commander Guide](https://docs.keeper.io/secrets-manager/commander-cli/overview)
+
+[Keeper Security Website](https://www.keepersecurity.com/secrets-manager.html)
