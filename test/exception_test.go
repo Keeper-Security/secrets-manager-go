@@ -21,7 +21,7 @@ func TestOurException(t *testing.T) {
 	}()
 	defer ResetMockResponseQueue()
 
-	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", ""))
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", "", ""))
 	config := ksm.NewMemoryKeyValueStorage(configJson)
 	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config})
 
@@ -58,7 +58,7 @@ func TestNotOurException(t *testing.T) {
 	}()
 	defer ResetMockResponseQueue()
 
-	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", ""))
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", "", ""))
 	config := ksm.NewMemoryKeyValueStorage(configJson)
 	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config})
 
@@ -75,7 +75,7 @@ func TestKeyRotation(t *testing.T) {
 	// Special exception for rotating the public key.
 	defer ResetMockResponseQueue()
 
-	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", ""))
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", "", ""))
 	config := ksm.NewMemoryKeyValueStorage(configJson)
 	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}, Ctx)
 

@@ -47,10 +47,6 @@ func main() {
 	if len(passwordField) > 0 {
 		newPassword := fmt.Sprintf("New Password from SDK Test - " + time.Now().Format(time.RFC850))
 		recToUpdate.SetPassword(newPassword)
-
-		updatedRawJson := ksm.DictToJson(recToUpdate.RecordDict)
-		recToUpdate.RawJson = updatedRawJson
-
 		if err := sm.Save(recToUpdate); err != nil {
 			klog.Error("error saving record: " + err.Error())
 		}

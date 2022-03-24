@@ -44,11 +44,11 @@ type PasswordComplexity struct {
 
 type Password struct {
 	KeeperRecordField
-	Required          bool               `json:"required,omitempty"`
-	PrivacyScreen     bool               `json:"privacyScreen,omitempty"`
-	EnforceGeneration bool               `json:"enforceGeneration,omitempty"`
-	Complexity        PasswordComplexity `json:"complexity,omitempty"`
-	Value             []string           `json:"value,omitempty"`
+	Required          bool                `json:"required,omitempty"`
+	PrivacyScreen     bool                `json:"privacyScreen,omitempty"`
+	EnforceGeneration bool                `json:"enforceGeneration,omitempty"`
+	Complexity        *PasswordComplexity `json:"complexity,omitempty"`
+	Value             []string            `json:"value,omitempty"`
 }
 
 // Password field constructor with the single value to eliminate the complexity of the passing List as a value

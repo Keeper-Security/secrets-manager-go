@@ -427,8 +427,9 @@ func (hotp *HOTP) Generate() (string, error) {
 // Generates TOTP/HOTP code.
 func generateOTP(base32Key string, counter int64, digits int, algo string) (string, error) {
 	counterBytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(counterBytes, uint64(counter))    // convert counter to byte array
-	secretKey, err := base32.StdEncoding.DecodeString(base32Key) // decode base32 secret to byte array
+	binary.BigEndian.PutUint64(counterBytes, uint64(counter)) // convert counter to byte array
+	rawBase32Key := strings.TrimRight(base32Key, "=")         // remove padding and use RawEncoding
+	secretKey, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(rawBase32Key)
 	if err != nil {
 		return "", errors.New("bad OTP secret key: " + err.Error())
 	}
