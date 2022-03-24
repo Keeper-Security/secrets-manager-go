@@ -68,7 +68,7 @@ func (r *Record) SetPassword(password string) {
 		} else {
 			passwordField["value"] = []string{password}
 		}
-
+		r.update()
 	} else {
 		klog.Error("password field not found for UID: " + r.Uid)
 	}
@@ -86,7 +86,7 @@ func (r *Record) SetFieldValueSingle(fieldType, value string) {
 		} else {
 			field["value"] = []string{value}
 		}
-
+		r.update()
 	} else {
 		klog.Error("field not found for UID: " + r.Uid)
 	}
@@ -104,7 +104,7 @@ func (r *Record) SetCustomFieldValueSingle(fieldLabel, value string) {
 		} else {
 			field["value"] = []string{value}
 		}
-
+		r.update()
 	} else {
 		klog.Error("custom field not found for UID: " + r.Uid)
 	}
@@ -120,6 +120,7 @@ func (r *Record) Title() string {
 func (r *Record) SetTitle(title string) {
 	if _, ok := r.RecordDict["title"]; ok {
 		r.RecordDict["title"] = title
+		r.update()
 	}
 }
 
@@ -131,7 +132,7 @@ func (r *Record) Type() string {
 }
 
 func (r *Record) SetType(newType string) {
-	klog.Error("Change Type not allowed!") // not implemented
+	klog.Error("Changing record type is not allowed!") // not implemented
 }
 
 func (r *Record) Notes() string {
@@ -144,6 +145,7 @@ func (r *Record) Notes() string {
 func (r *Record) SetNotes(notes string) {
 	if _, ok := r.RecordDict["notes"]; ok {
 		r.RecordDict["notes"] = notes
+		r.update()
 	}
 }
 
@@ -488,7 +490,7 @@ func (r *Record) ToString() string {
 	return fmt.Sprintf("[Record: UID=%s, revision=%d, editable=%t, type: %s, title: %s, files count: %d]", r.Uid, r.Revision, r.IsEditable, r.recordType, r.Title(), len(r.Files))
 }
 
-func (r *Record) Update() {
+func (r *Record) update() {
 	// Record class works directly on fields in recordDict here we only update the raw JSON
 	r.RawJson = DictToJson(r.RecordDict)
 }
@@ -572,7 +574,7 @@ func (r *Record) SetStandardFieldValue(fieldType string, value interface{}) erro
 		value = []interface{}{value}
 	}
 	field["value"] = value
-	r.Update()
+	r.update()
 	return nil
 }
 
@@ -608,7 +610,7 @@ func (r *Record) SetCustomFieldValue(fieldType string, value interface{}) error 
 		value = []interface{}{value}
 	}
 	field["value"] = value
-	r.Update()
+	r.update()
 	return nil
 }
 

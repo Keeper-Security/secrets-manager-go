@@ -573,7 +573,7 @@ func (r *MockRecord) Dump(secret []byte, flags *MockFlags) map[string]interface{
 // MockConfig represents a generated config for use in tests
 type MockConfig struct{}
 
-func (m MockConfig) MakeConfig(skipList []string, token string, appKey string) map[string]string {
+func (m MockConfig) MakeConfig(skipList []string, token, appKey, ownerKey string) map[string]string {
 	config := map[string]string{}
 
 	skipSet := make(map[string]struct{}, len(skipList))
@@ -600,6 +600,12 @@ func (m MockConfig) MakeConfig(skipList []string, token string, appKey string) m
 		appKey = core.BytesToBase64(randomBytes)
 	}
 	smConfig.Set(core.KEY_APP_KEY, appKey)
+
+	ownerKey = strings.TrimSpace(ownerKey)
+	if ownerKey == "" {
+		ownerKey = core.GetDefaultOwnerPublicKey()
+	}
+	smConfig.Set(core.KEY_OWNER_PUBLIC_KEY, ownerKey)
 
 	for _, key := range core.GetConfigKeys() {
 		if _, found := skipSet[string(key)]; !found {

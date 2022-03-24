@@ -14,7 +14,7 @@ func TestTheWorks(t *testing.T) {
 	// This test is mocked to return 3 record (2 records, 1 folder with a record)
 	defer ResetMockResponseQueue()
 
-	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", ""))
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", "", ""))
 	if f, err := ioutil.TempFile("", ""); err == nil {
 		defer func() {
 			f.Close()
