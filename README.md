@@ -95,7 +95,6 @@ if records, err := sm.GetSecrets([]string{}); err == nil && len(records) > 0 {
 	record := records[0]
 	newPassword := fmt.Sprintf("Test Password - " + time.Now().Format(time.RFC850))
 	record.SetPassword(newPassword)
-	record.RawJson = ksm.DictToJson(record.RecordDict)
 
 	if err := sm.Save(record); err != nil {
 		fmt.Println("Error saving record: " + err.Error())
