@@ -38,7 +38,7 @@ func TestGetNotation(t *testing.T) {
 	// This test is mocked to return 3 record (2 records, 1 folder with a record)
 	defer ResetMockResponseQueue()
 
-	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", ""))
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", "", ""))
 	config := ksm.NewMemoryKeyValueStorage(configJson)
 	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}, Ctx)
 
@@ -215,7 +215,7 @@ func TestSecretsManagerCustomField(t *testing.T) {
 
 	// If no custom fields are added via Secrets Manager, the JSON will be missing the "custom" key.
 	// Make a record that has no custom fields and see if stuff still works.
-	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", ""))
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", "", ""))
 	config := ksm.NewMemoryKeyValueStorage(configJson)
 	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}, Ctx)
 

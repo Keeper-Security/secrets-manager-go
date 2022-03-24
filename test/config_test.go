@@ -61,7 +61,7 @@ func TestDefaultLoadFromJson(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDirName)
 
-	mockConfig := MockConfig{}.MakeConfig(nil, "", "")
+	mockConfig := MockConfig{}.MakeConfig(nil, "", "", "")
 	configJson := MockConfig{}.MakeJson(mockConfig)
 	if err := os.Chdir(tempDirName); err == nil {
 		if err := ioutil.WriteFile(defaultConfigName, []byte(configJson), 0644); err == nil {
@@ -99,7 +99,7 @@ func TestOverwriteViaArgs(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDirName)
 
-	mockConfig := MockConfig{}.MakeConfig(nil, "", "")
+	mockConfig := MockConfig{}.MakeConfig(nil, "", "", "")
 	configJson := MockConfig{}.MakeJson(mockConfig)
 	if err := os.Chdir(tempDirName); err == nil {
 		if err := ioutil.WriteFile(defaultConfigName, []byte(configJson), 0644); err == nil {
@@ -120,7 +120,7 @@ func TestOverwriteViaArgs(t *testing.T) {
 }
 
 func TestOnetimeTokenFormatsAbbrev(t *testing.T) {
-	mockConfig := MockConfig{}.MakeConfig([]string{"clientKey"}, "", "")
+	mockConfig := MockConfig{}.MakeConfig([]string{"clientKey"}, "", "", "")
 	base64ConfigStr := MockConfig{}.MakeBase64(mockConfig)
 
 	config := ksm.NewMemoryKeyValueStorage(base64ConfigStr)
@@ -141,7 +141,7 @@ func TestOnetimeTokenFormatsAbbrev(t *testing.T) {
 	}
 }
 func TestOnetimeTokenFormatsHostname(t *testing.T) {
-	mockConfig := MockConfig{}.MakeConfig([]string{"clientKey"}, "", "")
+	mockConfig := MockConfig{}.MakeConfig([]string{"clientKey"}, "", "", "")
 	base64ConfigStr := MockConfig{}.MakeBase64(mockConfig)
 
 	config := ksm.NewMemoryKeyValueStorage(base64ConfigStr)
@@ -286,7 +286,7 @@ func TestPublicKeyId(t *testing.T) {
 }
 
 func TestInMemoryBase64Config(t *testing.T) {
-	mockConfig := MockConfig{}.MakeConfig([]string{"clientKey"}, "", "")
+	mockConfig := MockConfig{}.MakeConfig([]string{"clientKey"}, "", "", "")
 	base64ConfigStr := MockConfig{}.MakeBase64(mockConfig)
 	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: ksm.NewMemoryKeyValueStorage(base64ConfigStr)})
 	dictConfig := sm.Config.ReadStorage()
@@ -367,7 +367,7 @@ func TestInMemoryBase64Config(t *testing.T) {
 }
 
 func TestInMemoryBase64ConfigViaEnv(t *testing.T) {
-	mockConfig := MockConfig{}.MakeConfig([]string{"clientKey"}, "", "")
+	mockConfig := MockConfig{}.MakeConfig([]string{"clientKey"}, "", "", "")
 	base64ConfigStr := MockConfig{}.MakeBase64(mockConfig)
 
 	// Put the config into env var,

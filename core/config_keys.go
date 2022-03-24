@@ -12,7 +12,15 @@ const (
 	KEY_PRIVATE_KEY          ConfigKey = "privateKey"        // The client's private key
 	KEY_PUBLIC_KEY           ConfigKey = "publicKey"         // The client's public key
 	KEY_HOSTNAME             ConfigKey = "hostname"          // base hostname for the Secrets Manager service
+	defaultOwnerPublicKeyId  string    = "7"
 )
+
+func GetDefaultOwnerPublicKey() string {
+	if ownerKey, found := keeperServerPublicKeys[defaultOwnerPublicKeyId]; found {
+		return ownerKey
+	}
+	return ""
+}
 
 func GetConfigKey(value string) ConfigKey {
 	switch value {

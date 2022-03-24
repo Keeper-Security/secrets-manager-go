@@ -7,12 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	klog "github.com/keeper-security/secrets-manager-go/core/logger"
 )
@@ -302,6 +304,10 @@ func (c *SecretsManager) encryptAndSignPayload(transmissionKey *TransmissionKey,
 		if payloadJsonStr, err = v.CreatePayloadToJson(); err != nil {
 			return nil, errors.New("error converting create payload to JSON: " + err.Error())
 		}
+	case *FileUploadPayload:
+		if payloadJsonStr, err = v.FileUploadPayloadToJson(); err != nil {
+			return nil, errors.New("error converting file upload payload to JSON: " + err.Error())
+		}
 	default:
 		return nil, fmt.Errorf("error converting payload - unknown payload type for '%v'", v)
 	}
@@ -431,6 +437,92 @@ func (c *SecretsManager) prepareCreatePayload(record *Record) (res *CreatePayloa
 	}
 
 	return &payload, nil
+}
+
+func (c *SecretsManager) prepareFileUploadPayload(record *Record, file *KeeperFileUpload) (res *FileUploadPayload, encFileData []byte, err error) {
+	payload := FileUploadPayload{
+		ClientVersion: keeperSecretsManagerClientId,
+		ClientId:      c.Config.Get(KEY_CLIENT_ID),
+	}
+	if strings.TrimSpace(payload.ClientId) == "" {
+		return nil, nil, fmt.Errorf("unable to create record - client Id is missing from the configuration")
+	}
+	if record == nil {
+		return nil, nil, fmt.Errorf("unable to create record - missing record data")
+	}
+
+	ownerPublicKey := strings.TrimSpace(c.Config.Get(KEY_OWNER_PUBLIC_KEY))
+	if ownerPublicKey == "" {
+		return nil, nil, fmt.Errorf("unable to create record - owner key is missing. Looks like application was created using outdated client (Web Vault or Commander)")
+	}
+	ownerPublicKeyBytes := Base64ToBytes(ownerPublicKey)
+
+	// lastModified := time.Now().UnixMilli() // go1.17+
+	lastModified := time.Now().UnixNano() / int64(time.Millisecond)
+	fileData := KeeperFileData{
+		Title:        file.Title,
+		Name:         file.Name,
+		Type:         file.Type,
+		Size:         int64(len(file.Data)),
+		LastModified: lastModified,
+	}
+
+	fileRecordBytes := ""
+	if fd, err := json.Marshal(fileData); err == nil {
+		fileRecordBytes = string(fd)
+	} else {
+		return nil, nil, err
+	}
+
+	fileRecordKeyBytes, _ := GetRandomBytes(32)
+	fileRecordUidBytes, _ := GetRandomBytes(16)
+	payload.FileRecordUid = BytesToUrlSafeStr(fileRecordUidBytes)
+
+	if encryptedFileRecord, err := EncryptAesGcm([]byte(fileRecordBytes), fileRecordKeyBytes); err == nil {
+		payload.FileRecordData = BytesToUrlSafeStr(encryptedFileRecord)
+	} else {
+		return nil, nil, err
+	}
+	if encryptedFileRecordKey, err := PublicEncrypt(fileRecordKeyBytes, ownerPublicKeyBytes, nil); err == nil {
+		payload.FileRecordKey = BytesToBase64(encryptedFileRecordKey)
+	} else {
+		return nil, nil, err
+	}
+	if encryptedLinkKey, err := EncryptAesGcm(fileRecordKeyBytes, record.RecordKeyBytes); err == nil {
+		payload.LinkKey = BytesToBase64(encryptedLinkKey)
+	} else {
+		return nil, nil, err
+	}
+
+	encryptedFileData, err := EncryptAesGcm(file.Data, fileRecordKeyBytes)
+	if err == nil {
+		payload.FileSize = len(encryptedFileData)
+	} else {
+		return nil, nil, err
+	}
+
+	payload.OwnerRecordUid = record.Uid
+
+	fileRefs, err := record.GetStandardFieldValue("fileRef", false)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(fileRefs) > 0 {
+		fileRefs = append(fileRefs, payload.FileRecordUid)
+		record.SetStandardFieldValue("fileRef", fileRefs)
+	} else {
+		record.SetStandardFieldValue("fileRef", payload.FileRecordUid)
+	}
+
+	ownerRecordJson := DictToJson(record.RecordDict)
+	ownerRecordBytes := StringToBytes(ownerRecordJson)
+	if encryptedOwnerRecord, err := EncryptAesGcm(ownerRecordBytes, record.RecordKeyBytes); err == nil {
+		payload.OwnerRecordData = BytesToUrlSafeStr(encryptedOwnerRecord)
+	} else {
+		return nil, nil, err
+	}
+
+	return &payload, encryptedFileData, nil
 }
 
 func (c *SecretsManager) PostQuery(path string, payload interface{}) (body []byte, err error) {
@@ -565,7 +657,7 @@ func (c *SecretsManager) HandleHttpError(rs *http.Response, body []byte, httpErr
 
 	responseDict := JsonToDict(string(body))
 	if len(responseDict) == 0 {
-		// This is aN unknown error, not one of ours, just throw a HTTPError
+		// This is an unknown error, not one of ours, just throw a HTTPError
 		return false, errors.New("HTTPError: " + string(body))
 	}
 
@@ -768,6 +860,94 @@ func (c *SecretsManager) Save(record *Record) (err error) {
 
 	_, err = c.PostQuery("update_secret", payload)
 	return err
+}
+
+func (c *SecretsManager) UploadFile(record *Record, file *KeeperFileUpload) (uid string, err error) {
+	klog.Info("Uploading file for record uid: " + record.Uid)
+
+	payload, encryptedFileData, err := c.prepareFileUploadPayload(record, file)
+	if err != nil {
+		return "", err
+	}
+
+	responseData, err := c.PostQuery("add_file", payload)
+	if err != nil {
+		return "", err
+	}
+
+	response := AddFileResponseFromJson(string(responseData))
+
+	if err := c.fileUpload(response.Url, response.Parameters, response.SuccessStatusCode, encryptedFileData); err != nil {
+		return "", err
+	}
+
+	return payload.FileRecordUid, nil
+}
+
+func (c *SecretsManager) fileUpload(url, parameters string, successStatusCode int, fileData []byte) error {
+	body := new(bytes.Buffer)
+	w := multipart.NewWriter(body)
+
+	var jsParams map[string]string
+	err := json.Unmarshal([]byte(parameters), &jsParams)
+	if err != nil {
+		return err
+	}
+	for key, val := range jsParams {
+		if err := w.WriteField(key, val); err != nil {
+			return err
+		}
+	}
+
+	fw, err := w.CreateFormFile("file", "")
+	if err != nil {
+		return err
+	}
+	if _, err = fw.Write(fileData); err != nil {
+		return err
+	}
+
+	// create terminating boundary
+	if err := w.Close(); err != nil {
+		return err
+	}
+
+	rq, err := http.NewRequest("POST", url, body)
+	if err != nil {
+		return err
+	}
+
+	rq.Header.Set("Content-Type", w.FormDataContentType())
+
+	tr := http.DefaultClient.Transport
+	if insecureSkipVerify := !c.VerifySslCerts; insecureSkipVerify {
+		tr = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify},
+		}
+	}
+	client := &http.Client{Transport: tr}
+
+	rs, err := client.Do(rq)
+	if err != nil {
+		return err
+	}
+	defer rs.Body.Close()
+
+	if rs.StatusCode != successStatusCode {
+		return fmt.Errorf("Upload failed, status code %v", rs.StatusCode)
+	}
+
+	// PostResponse XML is ignored - verify status code for success
+	// rs.Header["Content-Type"][0] == "application/xml"
+	rsBody, err := ioutil.ReadAll(rs.Body)
+	if err != nil {
+		return err
+	}
+	if len(rsBody) == 0 {
+		return fmt.Errorf("Upload failed - XML response was expected but not received.")
+	}
+
+	return nil
 }
 
 func (c *SecretsManager) CreateSecret(record *Record) (recordUid string, err error) {

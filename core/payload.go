@@ -43,8 +43,8 @@ type GetPayload struct {
 }
 
 func (p *GetPayload) GetPayloadToJson() (string, error) {
-	if emp, err := json.Marshal(p); err == nil {
-		return string(emp), nil
+	if pb, err := json.Marshal(p); err == nil {
+		return string(pb), nil
 	} else {
 		klog.Error("Error serializing GetPayload to JSON: " + err.Error())
 		return "", err
@@ -71,8 +71,8 @@ type UpdatePayload struct {
 }
 
 func (p *UpdatePayload) UpdatePayloadToJson() (string, error) {
-	if emp, err := json.Marshal(p); err == nil {
-		return string(emp), nil
+	if pb, err := json.Marshal(p); err == nil {
+		return string(pb), nil
 	} else {
 		klog.Error("Error serializing UpdatePayload to JSON: " + err.Error())
 		return "", err
@@ -101,8 +101,8 @@ type CreatePayload struct {
 }
 
 func (p *CreatePayload) CreatePayloadToJson() (string, error) {
-	if emp, err := json.Marshal(p); err == nil {
-		return string(emp), nil
+	if pb, err := json.Marshal(p); err == nil {
+		return string(pb), nil
 	} else {
 		klog.Error("Error serializing CreatePayload to JSON: " + err.Error())
 		return "", err
@@ -117,6 +117,64 @@ func (p *CreatePayload) CreatePayloadFromJson(jsonData string) {
 		*p = res
 	} else {
 		klog.Error("Error deserializing CreatePayload from JSON: " + err.Error())
+	}
+}
+
+type FileUploadPayload struct {
+	ClientVersion   string `json:"clientVersion"`
+	ClientId        string `json:"clientId"`
+	FileRecordUid   string `json:"fileRecordUid"`
+	FileRecordKey   string `json:"fileRecordKey"`
+	FileRecordData  string `json:"fileRecordData"`
+	OwnerRecordUid  string `json:"ownerRecordUid"`
+	OwnerRecordData string `json:"ownerRecordData"`
+	LinkKey         string `json:"linkKey"`
+	FileSize        int    `json:"fileSize"`
+}
+
+func (p *FileUploadPayload) FileUploadPayloadToJson() (string, error) {
+	if pb, err := json.Marshal(p); err == nil {
+		return string(pb), nil
+	} else {
+		klog.Error("Error serializing FileUploadPayload to JSON: " + err.Error())
+		return "", err
+	}
+}
+
+func FileUploadPayloadFromJson(jsonData string) *FileUploadPayload {
+	bytes := []byte(jsonData)
+	res := FileUploadPayload{}
+
+	if err := json.Unmarshal(bytes, &res); err == nil {
+		return &res
+	} else {
+		klog.Error("Error deserializing FileUploadPayload from JSON: " + err.Error())
+		return nil
+	}
+}
+
+type KeeperFileUpload struct {
+	Name  string
+	Title string
+	Type  string
+	Data  []byte
+}
+
+type AddFileResponse struct {
+	Url               string `json:"url"`
+	Parameters        string `json:"parameters"`
+	SuccessStatusCode int    `json:"successStatusCode"`
+}
+
+func AddFileResponseFromJson(jsonData string) *AddFileResponse {
+	bytes := []byte(jsonData)
+	res := AddFileResponse{}
+
+	if err := json.Unmarshal(bytes, &res); err == nil {
+		return &res
+	} else {
+		klog.Error("Error deserializing AddFileResponse from JSON: " + err.Error())
+		return nil
 	}
 }
 
