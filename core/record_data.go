@@ -477,117 +477,74 @@ type KeeperFileData struct {
 }
 
 // getKeeperRecordField converts fieldData from generic interface{} to strongly typed interface{}
-func getKeeperRecordField(fieldType string, fieldData map[string]interface{}) (interface{}, error) {
+func getKeeperRecordField(fieldType string, fieldData map[string]interface{}, validate bool) (record interface{}, err error) {
 	if jsonField := DictToJson(fieldData); strings.TrimSpace(jsonField) != "" {
 		switch fieldType {
 		case "login":
-			record := Login{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &Login{}
 		case "password":
-			record := Password{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &Password{}
 		case "url":
-			record := Url{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &Url{}
 		case "fileRef":
-			record := FileRef{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &FileRef{}
 		case "oneTimeCode":
-			record := OneTimeCode{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &OneTimeCode{}
 		case "name":
-			record := Names{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &Names{}
 		case "birthDate":
-			record := BirthDate{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &BirthDate{}
 		case "date":
-			record := Date{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &Date{}
 		case "expirationDate":
-			record := ExpirationDate{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &ExpirationDate{}
 		case "text":
-			record := Text{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &Text{}
 		case "securityQuestion":
-			record := SecurityQuestions{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &SecurityQuestions{}
 		case "multiline":
-			record := Multiline{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &Multiline{}
 		case "email":
-			record := Email{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &Email{}
 		case "cardRef":
-			record := CardRef{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &CardRef{}
 		case "addressRef":
-			record := AddressRef{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &AddressRef{}
 		case "pinCode":
-			record := PinCode{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &PinCode{}
 		case "phone":
-			record := Phones{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &Phones{}
 		case "secret":
-			record := Secret{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &Secret{}
 		case "note":
-			record := SecureNote{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &SecureNote{}
 		case "accountNumber":
-			record := AccountNumber{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &AccountNumber{}
 		case "paymentCard":
-			record := PaymentCards{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &PaymentCards{}
 		case "bankAccount":
-			record := BankAccounts{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &BankAccounts{}
 		case "keyPair":
-			record := KeyPairs{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &KeyPairs{}
 		case "host":
-			record := Hosts{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &Hosts{}
 		case "address":
-			record := Addresses{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &Addresses{}
 		case "licenseNumber":
-			record := LicenseNumber{}
-			err := json.Unmarshal([]byte(jsonField), &record)
-			return &record, err
+			record = &LicenseNumber{}
 		default:
 			return nil, fmt.Errorf("unable to convert unknown field type %v", fieldType)
 		}
+
+		if validate {
+			decoder := json.NewDecoder(strings.NewReader(jsonField))
+			decoder.DisallowUnknownFields()
+			err = decoder.Decode(record)
+		} else {
+			err = json.Unmarshal([]byte(jsonField), record)
+		}
+		return
 	} else {
-		return nil, fmt.Errorf("unable to parse field from JSON %v", fieldData)
+		return nil, fmt.Errorf("unable to parse field from JSON '%v'", fieldData)
 	}
 }

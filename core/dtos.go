@@ -1067,14 +1067,14 @@ func NewRecordCreateFromJson(recordJson string) *RecordCreate {
 		fields := []interface{}{}
 		custom := []interface{}{}
 		for _, fMap := range rc.Fields {
-			if fld, err := convertToKeeperRecordField(fMap); err == nil {
+			if fld, err := convertToKeeperRecordField(fMap, false); err == nil {
 				fields = append(fields, fld)
 			} else {
 				klog.Error("skipped field definition due to conversion error(s) - " + err.Error())
 			}
 		}
 		for _, fMap := range rc.Custom {
-			if fld, err := convertToKeeperRecordField(fMap); err == nil {
+			if fld, err := convertToKeeperRecordField(fMap, false); err == nil {
 				custom = append(custom, fld)
 			} else {
 				klog.Error("skipped custom field definition due to conversion error(s) - " + err.Error())
@@ -1097,7 +1097,59 @@ func getRecordCreateFromJson(jsonData string) *RecordCreate {
 	return &res
 }
 
-func convertToKeeperRecordField(fieldData interface{}) (interface{}, error) {
+func NewRecordCreateFromJsonDecoder(recordJson string, disallowUnknownFields bool) (*RecordCreate, error) {
+	// NB! JSON mapping is controlled by disallowUnknownFields and may ignore any unknown record and field attributes
+	// when disallowUnknownFields is true it is safe to serialize back to record or field for update but
+	// when disallowUnknownFields is false avoid serializing RecordCreate back to JSON as may remove any extras
+	rc, err := getRecordCreateFromJsonDecoder(recordJson, disallowUnknownFields)
+	if err != nil {
+		return nil, err
+	}
+	if rc != nil {
+		fields := []interface{}{}
+		custom := []interface{}{}
+		for _, fMap := range rc.Fields {
+			if fld, err := convertToKeeperRecordField(fMap, true); err == nil {
+				fields = append(fields, fld)
+			} else {
+				klog.Error("skipped field definition due to conversion error(s) - " + err.Error())
+			}
+		}
+		for _, fMap := range rc.Custom {
+			if fld, err := convertToKeeperRecordField(fMap, true); err == nil {
+				custom = append(custom, fld)
+			} else {
+				klog.Error("skipped custom field definition due to conversion error(s) - " + err.Error())
+			}
+		}
+		rc.Fields = fields
+		rc.Custom = custom
+	}
+	return rc, nil
+}
+
+func getRecordCreateFromJsonDecoder(jsonData string, disallowUnknownFields bool) (*RecordCreate, error) {
+	// NB! Cannot validate RecordType because of custom types
+	rc := RecordCreate{}
+
+	if disallowUnknownFields {
+		decoder := json.NewDecoder(strings.NewReader(jsonData))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&rc); err != nil {
+			klog.Error("Error deserializing RecordCreate from strict JSON: " + err.Error())
+			return nil, err
+		}
+	} else {
+		if err := json.Unmarshal([]byte(jsonData), &rc); err != nil {
+			klog.Error("Error deserializing RecordCreate from JSON: " + err.Error())
+			return nil, err
+		}
+	}
+
+	return &rc, nil
+}
+
+func convertToKeeperRecordField(fieldData interface{}, validate bool) (interface{}, error) {
 	if fieldData == nil {
 		return nil, errors.New("cannot convert empty field data")
 	}
@@ -1105,7 +1157,7 @@ func convertToKeeperRecordField(fieldData interface{}) (interface{}, error) {
 	if fMap, ok := fieldData.(map[string]interface{}); ok {
 		if fType, found := fMap["type"]; found {
 			if sType, ok := fType.(string); ok && strings.Contains(fieldTypes, "|"+sType+"|") {
-				return getKeeperRecordField(sType, fMap)
+				return getKeeperRecordField(sType, fMap, validate)
 			} else {
 				return nil, fmt.Errorf("unknown field type %v", fMap)
 			}
