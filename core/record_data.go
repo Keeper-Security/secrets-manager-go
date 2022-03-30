@@ -477,61 +477,61 @@ type KeeperFileData struct {
 }
 
 // getKeeperRecordField converts fieldData from generic interface{} to strongly typed interface{}
-func getKeeperRecordField(fieldType string, fieldData map[string]interface{}, validate bool) (record interface{}, err error) {
+func getKeeperRecordField(fieldType string, fieldData map[string]interface{}, validate bool) (field interface{}, err error) {
 	if jsonField := DictToJson(fieldData); strings.TrimSpace(jsonField) != "" {
 		switch fieldType {
 		case "login":
-			record = &Login{}
+			field = &Login{}
 		case "password":
-			record = &Password{}
+			field = &Password{}
 		case "url":
-			record = &Url{}
+			field = &Url{}
 		case "fileRef":
-			record = &FileRef{}
+			field = &FileRef{}
 		case "oneTimeCode":
-			record = &OneTimeCode{}
+			field = &OneTimeCode{}
 		case "name":
-			record = &Names{}
+			field = &Names{}
 		case "birthDate":
-			record = &BirthDate{}
+			field = &BirthDate{}
 		case "date":
-			record = &Date{}
+			field = &Date{}
 		case "expirationDate":
-			record = &ExpirationDate{}
+			field = &ExpirationDate{}
 		case "text":
-			record = &Text{}
+			field = &Text{}
 		case "securityQuestion":
-			record = &SecurityQuestions{}
+			field = &SecurityQuestions{}
 		case "multiline":
-			record = &Multiline{}
+			field = &Multiline{}
 		case "email":
-			record = &Email{}
+			field = &Email{}
 		case "cardRef":
-			record = &CardRef{}
+			field = &CardRef{}
 		case "addressRef":
-			record = &AddressRef{}
+			field = &AddressRef{}
 		case "pinCode":
-			record = &PinCode{}
+			field = &PinCode{}
 		case "phone":
-			record = &Phones{}
+			field = &Phones{}
 		case "secret":
-			record = &Secret{}
+			field = &Secret{}
 		case "note":
-			record = &SecureNote{}
+			field = &SecureNote{}
 		case "accountNumber":
-			record = &AccountNumber{}
+			field = &AccountNumber{}
 		case "paymentCard":
-			record = &PaymentCards{}
+			field = &PaymentCards{}
 		case "bankAccount":
-			record = &BankAccounts{}
+			field = &BankAccounts{}
 		case "keyPair":
-			record = &KeyPairs{}
+			field = &KeyPairs{}
 		case "host":
-			record = &Hosts{}
+			field = &Hosts{}
 		case "address":
-			record = &Addresses{}
+			field = &Addresses{}
 		case "licenseNumber":
-			record = &LicenseNumber{}
+			field = &LicenseNumber{}
 		default:
 			return nil, fmt.Errorf("unable to convert unknown field type %v", fieldType)
 		}
@@ -539,9 +539,9 @@ func getKeeperRecordField(fieldType string, fieldData map[string]interface{}, va
 		if validate {
 			decoder := json.NewDecoder(strings.NewReader(jsonField))
 			decoder.DisallowUnknownFields()
-			err = decoder.Decode(record)
+			err = decoder.Decode(field)
 		} else {
-			err = json.Unmarshal([]byte(jsonField), record)
+			err = json.Unmarshal([]byte(jsonField), field)
 		}
 		return
 	} else {
