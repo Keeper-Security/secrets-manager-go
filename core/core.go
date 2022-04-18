@@ -1045,7 +1045,7 @@ func (c *SecretsManager) parseNotation(notationUrl string) (nopts *notationOptio
 		return nil, errors.New("field key is missing in the keeper url")
 	}
 
-	// By default we want to return a single value, which is the first item in the array
+	// By default, we want to return a single value, which is the first item in the array
 	opts.returnSingle = true
 	opts.index = 0
 	opts.dictKey = ""
@@ -1214,7 +1214,7 @@ func (c *SecretsManager) GetNotation(url string) (fieldValue []interface{}, err 
 			RECORD_UID/field/password[0]             => MyPassword
 			RECORD_UID/field/password[]              => ["MyPassword"]
 			RECORD_UID/custom_field/name[first]      => John
-			RECORD_UID/custom_field/name[last]       => Smitht
+			RECORD_UID/custom_field/name[last]       => Smith
 			RECORD_UID/custom_field/phone[0][number] => "555-5555555"
 			RECORD_UID/custom_field/phone[1][number] => "777-7777777"
 			RECORD_UID/custom_field/phone[]          => [{"number": "555-555...}, { "number": "777.....}]

@@ -1070,14 +1070,14 @@ func NewRecordCreateFromJson(recordJson string) *RecordCreate {
 			if fld, err := convertToKeeperRecordField(fMap, false); err == nil {
 				fields = append(fields, fld)
 			} else {
-				klog.Error("skipped field definition due to conversion error(s) - " + err.Error())
+				klog.Warning("skipped field definition due to conversion error(s) - " + err.Error())
 			}
 		}
 		for _, fMap := range rc.Custom {
 			if fld, err := convertToKeeperRecordField(fMap, false); err == nil {
 				custom = append(custom, fld)
 			} else {
-				klog.Error("skipped custom field definition due to conversion error(s) - " + err.Error())
+				klog.Warning("skipped custom field definition due to conversion error(s) - " + err.Error())
 			}
 		}
 		rc.Fields = fields
@@ -1112,14 +1112,14 @@ func NewRecordCreateFromJsonDecoder(recordJson string, disallowUnknownFields boo
 			if fld, err := convertToKeeperRecordField(fMap, true); err == nil {
 				fields = append(fields, fld)
 			} else {
-				klog.Error("skipped field definition due to conversion error(s) - " + err.Error())
+				return nil, err
 			}
 		}
 		for _, fMap := range rc.Custom {
 			if fld, err := convertToKeeperRecordField(fMap, true); err == nil {
 				custom = append(custom, fld)
 			} else {
-				klog.Error("skipped custom field definition due to conversion error(s) - " + err.Error())
+				return nil, err
 			}
 		}
 		rc.Fields = fields
