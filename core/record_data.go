@@ -548,3 +548,50 @@ func getKeeperRecordField(fieldType string, fieldData map[string]interface{}, va
 		return nil, fmt.Errorf("unable to parse field from JSON '%v'", fieldData)
 	}
 }
+
+func IsFieldClass(field interface{}) bool {
+	switch field.(type) {
+	case
+		AccountNumber, *AccountNumber,
+		AddressRef, *AddressRef,
+		Addresses, *Addresses,
+		BankAccounts, *BankAccounts,
+		BirthDate, *BirthDate,
+		CardRef, *CardRef,
+		Date, *Date,
+		Email, *Email,
+		ExpirationDate, *ExpirationDate,
+		FileRef, *FileRef,
+		Hosts, *Hosts,
+		KeyPairs, *KeyPairs,
+		LicenseNumber, *LicenseNumber,
+		Login, *Login,
+		Multiline, *Multiline,
+		Names, *Names,
+		OneTimeCode, *OneTimeCode,
+		Password, *Password,
+		PaymentCards, *PaymentCards,
+		Phones, *Phones,
+		PinCode, *PinCode,
+		Secret, *Secret,
+		SecureNote, *SecureNote,
+		SecurityQuestions, *SecurityQuestions,
+		Text, *Text,
+		Url, *Url:
+		return true
+	}
+	return false
+}
+
+func structToMap(data interface{}) (map[string]interface{}, error) {
+	dataBytes, err := json.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+	mapData := make(map[string]interface{})
+	err = json.Unmarshal(dataBytes, &mapData)
+	if err != nil {
+		return nil, err
+	}
+	return mapData, nil
+}

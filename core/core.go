@@ -849,6 +849,41 @@ func (c *SecretsManager) GetSecrets(uids []string) (records []*Record, err error
 	return records, err
 }
 
+func (c *SecretsManager) GetSecretsByTitle(recordTitle string) (records []*Record, err error) {
+	if records, err := c.GetSecrets([]string{}); err != nil {
+		return nil, err
+	} else {
+		return FindSecretsByTitle(recordTitle, records), nil
+	}
+}
+
+func (c *SecretsManager) GetSecretByTitle(recordTitle string) (record *Record, err error) {
+	if records, err := c.GetSecrets([]string{}); err != nil {
+		return nil, err
+	} else {
+		return FindSecretByTitle(recordTitle, records), nil
+	}
+}
+
+func FindSecretByTitle(recordTitle string, records []*Record) *Record {
+	for _, r := range records {
+		if r.Title() == recordTitle {
+			return r
+		}
+	}
+	return nil
+}
+
+func FindSecretsByTitle(recordTitle string, records []*Record) []*Record {
+	recordsByTitle := []*Record{}
+	for _, r := range records {
+		if r.Title() == recordTitle {
+			recordsByTitle = append(recordsByTitle, r)
+		}
+	}
+	return recordsByTitle
+}
+
 func (c *SecretsManager) Save(record *Record) (err error) {
 	// Save updated secret values
 	klog.Info("Updating record uid: " + record.Uid)
@@ -934,7 +969,7 @@ func (c *SecretsManager) fileUpload(url, parameters string, successStatusCode in
 	defer rs.Body.Close()
 
 	if rs.StatusCode != successStatusCode {
-		return fmt.Errorf("Upload failed, status code %v", rs.StatusCode)
+		return fmt.Errorf("upload failed, status code %v", rs.StatusCode)
 	}
 
 	// PostResponse XML is ignored - verify status code for success
@@ -944,7 +979,7 @@ func (c *SecretsManager) fileUpload(url, parameters string, successStatusCode in
 		return err
 	}
 	if len(rsBody) == 0 {
-		return fmt.Errorf("Upload failed - XML response was expected but not received.")
+		return fmt.Errorf("upload failed - XML response was expected but not received")
 	}
 
 	return nil

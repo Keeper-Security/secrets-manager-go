@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -576,6 +577,146 @@ func (r *Record) SetStandardFieldValue(fieldType string, value interface{}) erro
 	field["value"] = value
 	r.update()
 	return nil
+}
+
+func (r *Record) FieldExists(section, name string) bool {
+	result := false
+	if section != "fields" && section != "custom" {
+		return result
+	}
+
+	if rfi, found := r.RecordDict[section]; found && rfi != nil {
+		if rfsi, ok := rfi.([]interface{}); ok && len(rfsi) > 0 {
+			for _, v := range rfsi {
+				if fmap, ok := v.(map[string]interface{}); ok {
+					if ftype, found := fmap["type"]; found && name == fmt.Sprint(ftype) {
+						result = true
+						break
+					}
+				}
+			}
+		}
+	}
+
+	return result
+}
+
+func (r *Record) RemoveField(section, name string, removeAll bool) int {
+	removed := 0
+	if section != "fields" && section != "custom" {
+		return removed
+	}
+
+	if rfi, found := r.RecordDict[section]; found && rfi != nil {
+		if rfsi, ok := rfi.([]interface{}); ok && len(rfsi) > 0 {
+			ix := []int{}
+			for i, v := range rfsi {
+				if fmap, ok := v.(map[string]interface{}); ok {
+					if ftype, found := fmap["type"]; found && name == fmt.Sprint(ftype) {
+						ix = append(ix, i)
+					}
+				}
+			}
+			if len(ix) > 1 && !removeAll {
+				ix = ix[:1]
+			}
+			if len(ix) > 0 {
+				// work on a copy since slices do not support in-place operations
+				rfsic := make([]interface{}, len(rfsi))
+				copy(rfsic, rfsi)
+
+				sort.Sort(sort.Reverse(sort.IntSlice(ix)))
+				for _, i := range ix {
+					removed++
+					rfsic = append(rfsic[:i], rfsic[i+1:]...)
+				}
+				r.RecordDict[section] = rfsic
+			}
+		}
+	}
+
+	return removed
+}
+
+func (r *Record) InsertField(section string, field interface{}) error {
+	if section != "fields" && section != "custom" {
+		return fmt.Errorf("unknown field section '%s'", section)
+	}
+	if !IsFieldClass(field) {
+		return fmt.Errorf("field is not a vaild field class")
+	}
+
+	if rfi, found := r.RecordDict[section]; !found || rfi == nil {
+		r.RecordDict[section] = []interface{}{}
+	}
+	if rfi, found := r.RecordDict[section]; found && rfi != nil {
+		if rfsi, ok := rfi.([]interface{}); ok {
+			// work on a copy since slices do not support in-place operations
+			rfsic := make([]interface{}, len(rfsi))
+			copy(rfsic, rfsi)
+			if fmap, err := structToMap(field); err == nil {
+				rfsic = append(rfsic, fmap)
+			} else {
+				return fmt.Errorf("error converting field %v - Error: %s", field, err.Error())
+			}
+			r.RecordDict[section] = rfsic
+		} else {
+			return fmt.Errorf("section '%s' is not in the expected format - expected []interface{}", section)
+		}
+	} else {
+		return fmt.Errorf("section '%s' not found", section)
+	}
+
+	return nil
+}
+
+func (r *Record) UpdateField(section string, field interface{}) error {
+	if section != "fields" && section != "custom" {
+		return fmt.Errorf("unknown field section '%s'", section)
+	}
+	if !IsFieldClass(field) {
+		return fmt.Errorf("field is not a vaild field class")
+	}
+
+	fieldMap, err := structToMap(field)
+	if err != nil {
+		return fmt.Errorf("error converting field %v - Error: %s", field, err.Error())
+	}
+
+	fieldType := ""
+	if fType, found := fieldMap["type"]; found {
+		fieldType = strings.TrimSpace(fmt.Sprint(fType))
+	}
+	if fieldType == "" {
+		return fmt.Errorf("error - missing field type in field: %v", field)
+	}
+
+	if rfi, found := r.RecordDict[section]; !found || rfi == nil {
+		r.RecordDict[section] = []interface{}{}
+	}
+	if rfi, found := r.RecordDict[section]; found && rfi != nil {
+		if rfsi, ok := rfi.([]interface{}); ok {
+			for _, v := range rfsi {
+				if fmap, ok := v.(map[string]interface{}); ok {
+					if ftype, found := fmap["type"]; found && fieldType == fmt.Sprint(ftype) {
+						for key := range fmap {
+							delete(fmap, key)
+						}
+						for key, val := range fieldMap {
+							fmap[key] = val
+						}
+						return nil
+					}
+				}
+			}
+		} else {
+			return fmt.Errorf("section '%s' is not in the expected format - expected []interface{}", section)
+		}
+	} else {
+		return fmt.Errorf("section '%s' not found", section)
+	}
+
+	return fmt.Errorf("field type '%s' not found", fieldType)
 }
 
 func (r *Record) getCustomField(fieldType string) map[string]interface{} {
