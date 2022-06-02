@@ -379,7 +379,12 @@ func ECDH_Ecdsa(priv *ecdsa.PrivateKey, pub *ecdsa.PublicKey) ([]byte, error) {
 		return nil, ErrKeyExchange
 	}
 
-	shared := sha256.Sum256(x.Bytes())
+	// x.Bytes() may return less than 32 bytes - pad with leading 0
+	buf := x.Bytes()
+	if len(buf) < 32 {
+		buf = x.FillBytes(make([]byte, 32))
+	}
+	shared := sha256.Sum256(buf)
 	return shared[:Aes256KeySize], nil
 }
 

@@ -360,16 +360,14 @@ func (f *MockFile) Dump(secret []byte, flags *MockFlags) map[string]interface{} 
 	return fileData
 }
 
-const MockRecordNoLabelTag string = "__NONE__"
-
 type MockRecord struct {
 	Uid          string
 	RecordType   string
 	Title        string
 	IsEditable   bool
 	Files        map[string]interface{}
-	Fields       map[string]map[string]interface{}
-	CustomFields map[string]map[string]interface{}
+	Fields       []map[string]interface{}
+	CustomFields []map[string]interface{}
 }
 
 func NewMockRecord(recordType, uid, title string) *MockRecord {
@@ -380,23 +378,14 @@ func NewMockRecord(recordType, uid, title string) *MockRecord {
 		recordType = "login"
 	}
 
-	// Some default data
-	fields := map[string]map[string]interface{}{
-		MockRecordNoLabelTag: {
-			"login":    "Login " + uid,
-			"password": "******** " + uid,
-			"url":      "http://localhost/" + uid,
-		},
-	}
-
 	return &MockRecord{
 		Uid:          uid,
 		RecordType:   recordType,
 		Title:        title,
 		IsEditable:   false,
 		Files:        map[string]interface{}{},
-		Fields:       fields,
-		CustomFields: map[string]map[string]interface{}{},
+		Fields:       []map[string]interface{}{},
+		CustomFields: []map[string]interface{}{},
 	}
 }
 
@@ -407,8 +396,8 @@ func ConvertKeeperRecord(keeperRecord *core.Record) *MockRecord {
 		Title:        keeperRecord.Title(),
 		IsEditable:   false,
 		Files:        map[string]interface{}{},
-		Fields:       map[string]map[string]interface{}{},
-		CustomFields: map[string]map[string]interface{}{},
+		Fields:       []map[string]interface{}{},
+		CustomFields: []map[string]interface{}{},
 	}
 
 	if iFields, ok := keeperRecord.RecordDict["fields"]; ok {
@@ -423,7 +412,7 @@ func ConvertKeeperRecord(keeperRecord *core.Record) *MockRecord {
 					} else {
 						fval = append(fval, fv)
 					}
-					mockRecord.Field(ftype, flabel, fval)
+					mockRecord.Field(ftype, flabel, "", "", fval)
 				}
 			}
 		}
@@ -441,7 +430,7 @@ func ConvertKeeperRecord(keeperRecord *core.Record) *MockRecord {
 					} else {
 						fval = append(fval, fv)
 					}
-					mockRecord.CustomField(ftype, flabel, fval)
+					mockRecord.CustomField(ftype, flabel, "", "", fval)
 				}
 			}
 		}
@@ -451,31 +440,34 @@ func ConvertKeeperRecord(keeperRecord *core.Record) *MockRecord {
 	return &mockRecord
 }
 
-func (r *MockRecord) Field(fieldType, label string, value interface{}) {
-	// Fields can sometimes have a label
-	if label == "" {
-		label = MockRecordNoLabelTag
-	}
+func NewField(fieldType, label, required, privacyScreen string, value interface{}) map[string]interface{} {
 	if _, ok := value.([]interface{}); !ok {
 		value = []interface{}{value}
 	}
-	if _, ok := r.Fields[label]; !ok {
-		r.Fields[label] = map[string]interface{}{}
+	field := map[string]interface{}{
+		"type":  fieldType,
+		"value": value,
 	}
-	r.Fields[label][fieldType] = value
+	if label != "" {
+		field["label"] = label
+	}
+	if req, err := core.StrToBool(required); err == nil {
+		field["required"] = req
+	}
+	if ps, err := core.StrToBool(privacyScreen); err == nil {
+		field["privacyScreen"] = ps
+	}
+	return field
 }
 
-func (r *MockRecord) CustomField(fieldType, label string, value interface{}) {
-	if fieldType == "" {
-		fieldType = "text"
-	}
-	if _, ok := value.([]interface{}); !ok {
-		value = []interface{}{value}
-	}
-	if _, ok := r.CustomFields[label]; !ok {
-		r.CustomFields[label] = map[string]interface{}{}
-	}
-	r.CustomFields[label][fieldType] = value
+func (r *MockRecord) Field(fieldType, label, required, privacyScreen string, value interface{}) {
+	field := NewField(fieldType, label, required, privacyScreen, value)
+	r.Fields = append(r.Fields, field)
+}
+
+func (r *MockRecord) CustomField(fieldType, label, required, privacyScreen string, value interface{}) {
+	field := NewField(fieldType, label, required, privacyScreen, value)
+	r.CustomFields = append(r.CustomFields, field)
 }
 
 func (r *MockRecord) AddFile(name, title, contentType, url string, content []byte, lastModified int) *MockFile {
@@ -502,27 +494,11 @@ func (r *MockRecord) Dump(secret []byte, flags *MockFlags) map[string]interface{
 		})
 	}
 
-	for label := range r.Fields {
-		for fieldType, field := range r.Fields[label] {
-			data := map[string]interface{}{
-				"type":  fieldType,
-				"value": field,
-			}
-			if label != MockRecordNoLabelTag {
-				data["label"] = label
-			}
-			fields = append(fields, data)
-		}
+	for _, f := range r.Fields {
+		fields = append(fields, f)
 	}
-
-	for label := range r.CustomFields {
-		for fieldType, field := range r.CustomFields[label] {
-			custom = append(custom, map[string]interface{}{
-				"type":  fieldType,
-				"label": label,
-				"value": field,
-			})
-		}
+	for _, f := range r.CustomFields {
+		custom = append(custom, f)
 	}
 
 	dataMap := map[string]interface{}{
@@ -628,4 +604,71 @@ func (m MockConfig) MakeJson(config map[string]string) string {
 
 func (m MockConfig) MakeBase64(config map[string]string) string {
 	return core.BytesToBase64([]byte(m.MakeJson(config)))
+}
+
+func TestFieldOrder(t *testing.T) {
+	// Make sure we get the fields in the order we added them.
+	// This is mainly for custom records
+	// where you can have multiple text types in the standard fields.
+	defer ResetMockResponseQueue()
+
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", "", ""))
+	config := core.NewMemoryKeyValueStorage(configJson)
+	sm := core.NewSecretsManager(&core.ClientOptions{Config: config}, Ctx)
+
+	res := NewMockResponse([]byte{}, 200, nil)
+	one := res.AddRecord("", "", "", nil, nil)
+	one.Field("login", "", "", "", "My Login")
+	one.Field("password", "", "", "", "My Password")
+	one.Field("text", "", "", "", "Random Text")
+	one.CustomField("text", "My Custom 1", "", "", "MyCustom1")
+	one.CustomField("secret", "My Custom 2", "", "", "MyCustom2")
+
+	MockResponseQueue.AddMockResponse(res)
+
+	records, err := sm.GetSecrets([]string{""})
+	if err != nil || len(records) != 1 {
+		t.Error("didn't get 1 record")
+	}
+	record := records[0]
+
+	fields := []map[string]interface{}{}
+	if flds, found := record.RecordDict["fields"]; found {
+		if fs, ok := flds.([]interface{}); ok {
+			for _, fd := range fs {
+				if fdm, ok := fd.(map[string]interface{}); ok {
+					fields = append(fields, fdm)
+				}
+			}
+		}
+	}
+	if len(fields) != 3 {
+		t.Error("did not find 3 standard fields")
+	}
+	if val, found := fields[0]["type"]; !found || fmt.Sprint(val) != "login" {
+		t.Error("login is not the first standard field")
+	} else if val, found := fields[1]["type"]; !found || fmt.Sprint(val) != "password" {
+		t.Error("password is not the second standard field")
+	} else if val, found := fields[2]["type"]; !found || fmt.Sprint(val) != "text" {
+		t.Error("text is not the third standard field")
+	}
+
+	custom := []map[string]interface{}{}
+	if flds, found := record.RecordDict["custom"]; found {
+		if fs, ok := flds.([]interface{}); ok {
+			for _, fd := range fs {
+				if fdm, ok := fd.(map[string]interface{}); ok {
+					custom = append(custom, fdm)
+				}
+			}
+		}
+	}
+	if len(custom) != 2 {
+		t.Error("did not find 2 custom fields")
+	}
+	if val, found := custom[0]["label"]; !found || fmt.Sprint(val) != "My Custom 1" {
+		t.Error("'My Custom 1' is not the first custom field")
+	} else if val, found := custom[1]["label"]; !found || fmt.Sprint(val) != "My Custom 2" {
+		t.Error("'My Custom 2' is not the second custom field")
+	}
 }

@@ -28,25 +28,25 @@ func TestTheWorks(t *testing.T) {
 			// Add three records, 2 outside a folder, 1 inside folder
 			res1 := NewMockResponse([]byte{}, 200, nil)
 			one := res1.AddRecord("My Record 1", "", "", nil, nil)
-			one.Field("login", "", "My Login 1")
-			one.Field("password", "", "My Password 1")
-			one.CustomField("text", "My Custom 1", "custom1")
+			one.Field("login", "", "", "", "My Login 1")
+			one.Field("password", "", "", "", "My Password 1")
+			one.CustomField("text", "My Custom 1", "", "", "custom1")
 
 			// The frontend allows for custom field to not have unique names :(. The best way we
 			// can handle this is to set label and field type.
-			one.CustomField("text", "My Custom 2", "custom2")
-			one.CustomField("secret", "My Custom 2", "my secret")
+			one.CustomField("text", "My Custom 2", "", "", "custom2")
+			one.CustomField("secret", "My Custom 2", "", "", "my secret")
 
 			two := res1.AddRecord("My Record 2", "", "", nil, nil)
-			two.Field("login", "", "My Login 2")
-			two.Field("password", "", "My Password 2")
+			two.Field("login", "", "", "", "My Login 2")
+			two.Field("password", "", "", "", "My Password 2")
 			two.AddFile("My File 1", "", "", "", nil, 0)
 			two.AddFile("My File 2", "", "", "", nil, 0)
 
 			folder := res1.AddFolder("", nil)
 			three := folder.AddRecord("My Record 3", "", "", nil)
-			three.Field("login", "", "My Login 3")
-			three.Field("password", "", "My Password 3")
+			three.Field("login", "", "", "", "My Login 3")
+			three.Field("password", "", "", "", "My Password 3")
 
 			// --------------------------
 			res2 := NewMockResponse([]byte{}, 200, nil)

@@ -200,6 +200,11 @@ func DictToJsonWithDefultIndent(dict map[string]interface{}) string {
 	return DictToJsonWithIndent(dict, "    ")
 }
 
+func NowMilliseconds() int64 {
+	// time.Now().UnixMilli() // requires go1.17+
+	return time.Now().UnixNano() / int64(time.Millisecond)
+}
+
 var strToBoolMap = map[string]bool{
 	"y":     true,
 	"yes":   true,

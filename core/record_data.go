@@ -468,14 +468,6 @@ func NewLicenseNumber(value string) *LicenseNumber {
 	}
 }
 
-type KeeperFileData struct {
-	Title        string `json:"title,omitempty"`
-	Name         string `json:"name,omitempty"`
-	Type         string `json:"type,omitempty"`
-	Size         int64  `json:"size,omitempty"`
-	LastModified int64  `json:"lastModified,omitempty"`
-}
-
 // getKeeperRecordField converts fieldData from generic interface{} to strongly typed interface{}
 func getKeeperRecordField(fieldType string, fieldData map[string]interface{}, validate bool) (field interface{}, err error) {
 	if jsonField := DictToJson(fieldData); strings.TrimSpace(jsonField) != "" {

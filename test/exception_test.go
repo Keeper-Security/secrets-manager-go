@@ -81,13 +81,13 @@ func TestKeyRotation(t *testing.T) {
 
 	res1 := NewMockResponse([]byte{}, 200, nil)
 	mockRecord1 := res1.AddRecord("My Record", "login", "", nil, nil)
-	mockRecord1.Field("login", "", "My Login")
-	mockRecord1.Field("password", "", "My Password")
+	mockRecord1.Field("login", "", "", "", "My Login")
+	mockRecord1.Field("password", "", "", "", "My Password")
 
 	res2 := NewMockResponse([]byte{}, 200, nil)
 	mockRecord2 := res2.AddRecord("My Record", "login", "", nil, nil)
-	mockRecord2.Field("login", "", "KEY CHANGE")
-	mockRecord2.Field("password", "", "My Password")
+	mockRecord2.Field("login", "", "", "", "KEY CHANGE")
+	mockRecord2.Field("password", "", "", "", "My Password")
 
 	// KEY ROTATION ERROR. error needs to be key.
 	errorJson := `
