@@ -14,7 +14,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	klog "github.com/keeper-security/secrets-manager-go/core/logger"
 )
@@ -242,9 +241,19 @@ func (c *SecretsManager) GenerateTransmissionKey(keyId string) *TransmissionKey 
 		klog.Panicf("The public key id %s does not exist.", keyId)
 	}
 
-	transmissionKey, _ := GenerateRandomBytes(Aes256KeySize)
+	transmissionKey, err := GenerateRandomBytes(Aes256KeySize)
+	if err != nil {
+		klog.Error("Failed to generate the transmission key. " + err.Error())
+	} else if len(transmissionKey) != Aes256KeySize {
+		klog.Error("Failed to generate the transmission key with correct length. Key length: " + strconv.Itoa(len(transmissionKey)))
+	}
+
 	serverPublicRawKeyBytes := UrlSafeStrToBytes(serverPublicKey)
-	encryptedKey, _ := PublicEncrypt(transmissionKey, serverPublicRawKeyBytes, nil)
+	encryptedKey, err := PublicEncrypt(transmissionKey, serverPublicRawKeyBytes, nil)
+	if err != nil {
+		klog.Error("Failed to encrypt transmission key. " + err.Error())
+	}
+
 	return &TransmissionKey{
 		PublicKeyId:  keyId,
 		Key:          transmissionKey,
@@ -374,8 +383,6 @@ func (c *SecretsManager) prepareUpdatePayload(record *Record) (res *UpdatePayloa
 	payload.RecordUid = record.Uid
 	payload.Revision = record.Revision
 
-	// #TODO: This is where we need to get JSON of the updated Record
-	// rawJson := DictToJson(record.RecordDict)
 	rawJsonBytes := StringToBytes(record.RawJson)
 	if encryptedRawJsonBytes, err := EncryptAesGcm(rawJsonBytes, record.RecordKeyBytes); err == nil {
 		payload.Data = BytesToUrlSafeStr(encryptedRawJsonBytes)
@@ -457,14 +464,12 @@ func (c *SecretsManager) prepareFileUploadPayload(record *Record, file *KeeperFi
 	}
 	ownerPublicKeyBytes := Base64ToBytes(ownerPublicKey)
 
-	// lastModified := time.Now().UnixMilli() // go1.17+
-	lastModified := time.Now().UnixNano() / int64(time.Millisecond)
 	fileData := KeeperFileData{
 		Title:        file.Title,
 		Name:         file.Name,
 		Type:         file.Type,
 		Size:         int64(len(file.Data)),
-		LastModified: lastModified,
+		LastModified: NowMilliseconds(),
 	}
 
 	fileRecordBytes := ""
@@ -503,6 +508,12 @@ func (c *SecretsManager) prepareFileUploadPayload(record *Record, file *KeeperFi
 
 	payload.OwnerRecordUid = record.Uid
 
+	if exists := record.FieldExists("fields", "fileRef"); !exists {
+		fref := NewFileRef("")
+		fref.Value = []string{}
+		record.InsertField("fields", fref)
+		record.update()
+	}
 	fileRefs, err := record.GetStandardFieldValue("fileRef", false)
 	if err != nil {
 		return nil, nil, err
@@ -886,8 +897,11 @@ func FindSecretsByTitle(recordTitle string, records []*Record) []*Record {
 
 func (c *SecretsManager) Save(record *Record) (err error) {
 	// Save updated secret values
-	klog.Info("Updating record uid: " + record.Uid)
+	if record == nil {
+		return errors.New("Save - missing record data")
+	}
 
+	klog.Info("Updating record uid: " + record.Uid)
 	payload, err := c.prepareUpdatePayload(record)
 	if err != nil {
 		return err
@@ -897,21 +911,41 @@ func (c *SecretsManager) Save(record *Record) (err error) {
 	return err
 }
 
-func (c *SecretsManager) UploadFile(record *Record, file *KeeperFileUpload) (uid string, err error) {
-	klog.Info("Uploading file for record uid: " + record.Uid)
+func (c *SecretsManager) UploadFilePath(record *Record, filePath string) (uid string, err error) {
+	// Upload file using provided file path
+	if fileToUpload, err := GetFileForUpload(filePath, "", "", ""); err != nil {
+		return "", err
+	} else {
+		return c.UploadFile(record, fileToUpload)
+	}
+}
 
+func (c *SecretsManager) UploadFile(record *Record, file *KeeperFileUpload) (uid string, err error) {
+	if record == nil {
+		return "", errors.New("UploadFile - missing record data")
+	} else if file == nil {
+		return "", errors.New("UploadFile - missing file upload data")
+	}
+
+	klog.Info(fmt.Sprintf("Uploading file: %s to record UID: %s", file.Name, record.Uid))
+	klog.Debug(fmt.Sprintf("Preparing upload payload. Record UID: [%s], file name: [%s], file size: [%d]", record.Uid, file.Name, len(file.Data)))
 	payload, encryptedFileData, err := c.prepareFileUploadPayload(record, file)
 	if err != nil {
 		return "", err
 	}
 
+	klog.Debug("Sending file metadata")
 	responseData, err := c.PostQuery("add_file", payload)
 	if err != nil {
 		return "", err
 	}
 
-	response := AddFileResponseFromJson(string(responseData))
+	response, err := AddFileResponseFromJson(string(responseData))
+	if err != nil {
+		return "", err
+	}
 
+	klog.Debug(fmt.Sprintf("Uploading file data. Upload URL: [%s], file name: [%s], encrypted file size: [%d]", response.Url, file.Name, len(encryptedFileData)))
 	if err := c.fileUpload(response.Url, response.Parameters, response.SuccessStatusCode, encryptedFileData); err != nil {
 		return "", err
 	}
@@ -981,6 +1015,7 @@ func (c *SecretsManager) fileUpload(url, parameters string, successStatusCode in
 	if len(rsBody) == 0 {
 		return fmt.Errorf("upload failed - XML response was expected but not received")
 	}
+	klog.Debug(fmt.Sprintf("Finished uploading file data. Status code: %d, response data: %s", rs.StatusCode, string(rsBody)))
 
 	return nil
 }

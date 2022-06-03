@@ -11,14 +11,14 @@ import (
 func generateMockresponse(uid string) *MockResponse {
 	res1 := NewMockResponse([]byte{}, 200, nil)
 	one := res1.AddRecord("My Record 1", "", uid, nil, nil)
-	one.Field("login", "", "My Login 1")
-	one.Field("password", "", "My Password 1")
-	one.CustomField("text", "My Custom 1", "custom1")
+	one.Field("login", "", "", "", "My Login 1")
+	one.Field("password", "", "", "", "My Password 1")
+	one.CustomField("text", "My Custom 1", "", "", "custom1")
 
 	// The frontend allows for custom field to not have unique names :(. The best way we
 	// can handle this is to set label and field type.
-	one.CustomField("text", "My Custom 1", "custom1")
-	one.CustomField("text", "My Custom 2", []interface{}{"one", "two", "three"})
+	one.CustomField("text", "My Custom 1", "", "", "custom1")
+	one.CustomField("text", "My Custom 2", "", "", []interface{}{"one", "two", "three"})
 
 	phoneData := []interface{}{
 		map[string]string{"number": "555-5555555", "ext": "55"},
@@ -26,10 +26,10 @@ func generateMockresponse(uid string) *MockResponse {
 		map[string]string{"number": "888-8888888", "ext": "", "type": "Home"},
 		map[string]string{"number": "999-9999999", "type": "Work"},
 	}
-	one.CustomField("text", "phone", phoneData)
+	one.CustomField("text", "phone", "", "", phoneData)
 
 	nameData := []interface{}{map[string]string{"first": "Jenny", "middle": "X", "last": "Smith"}}
-	one.CustomField("text", "name", nameData)
+	one.CustomField("text", "name", "", "", nameData)
 	return res1
 }
 
@@ -224,14 +224,14 @@ func TestSecretsManagerCustomField(t *testing.T) {
 	// We want to remove the 'custom' key from the JSON
 	res1 := NewMockResponse([]byte{}, 200, &MockFlags{PruneCustomFields: true})
 	one := res1.AddRecord("My Record 1", "", "", nil, nil)
-	one.Field("login", "", "My Login 1")
-	one.Field("password", "", "My Password 1")
+	one.Field("login", "", "", "", "My Login 1")
+	one.Field("password", "", "", "", "My Password 1")
 	MockResponseQueue.AddMockResponse(res1)
 
 	res2 := NewMockResponse([]byte{}, 200, &MockFlags{PruneCustomFields: true})
 	two := res2.AddRecord("My Record 2", "", "", nil, nil)
-	two.Field("login", "", "My Login 2")
-	two.Field("password", "", "My Password 2")
+	two.Field("login", "", "", "", "My Login 2")
+	two.Field("password", "", "", "", "My Password 2")
 	MockResponseQueue.AddMockResponse(res2)
 
 	// Make sure the mock worked

@@ -153,31 +153,6 @@ func FileUploadPayloadFromJson(jsonData string) *FileUploadPayload {
 	}
 }
 
-type KeeperFileUpload struct {
-	Name  string
-	Title string
-	Type  string
-	Data  []byte
-}
-
-type AddFileResponse struct {
-	Url               string `json:"url"`
-	Parameters        string `json:"parameters"`
-	SuccessStatusCode int    `json:"successStatusCode"`
-}
-
-func AddFileResponseFromJson(jsonData string) *AddFileResponse {
-	bytes := []byte(jsonData)
-	res := AddFileResponse{}
-
-	if err := json.Unmarshal(bytes, &res); err == nil {
-		return &res
-	} else {
-		klog.Error("Error deserializing AddFileResponse from JSON: " + err.Error())
-		return nil
-	}
-}
-
 type EncryptedPayload struct {
 	EncryptedPayload []byte
 	Signature        []byte

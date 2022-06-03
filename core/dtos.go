@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -483,6 +484,15 @@ func (r *Record) FindFileByTitle(title string) *KeeperFile {
 func (r *Record) DownloadFileByTitle(title string, path string) bool {
 	if foundFile := r.FindFileByTitle(title); foundFile != nil {
 		return foundFile.SaveFile(path, false)
+	}
+	return false
+}
+
+func (r *Record) DownloadFile(fileUid string, path string) bool {
+	for i := range r.Files {
+		if r.Files[i].Uid == fileUid {
+			return r.Files[i].SaveFile(path, false)
+		}
 	}
 	return false
 }
@@ -1160,6 +1170,44 @@ func (f *KeeperFile) ToString() string {
 	return fmt.Sprintf("[KeeperFile - name: %s, title: %s]", f.Name, f.Title)
 }
 
+type KeeperFileUpload struct {
+	Name  string
+	Title string
+	Type  string
+	Data  []byte
+}
+
+func GetFileForUpload(filePath, fileName, fileTitle, mimeType string) (*KeeperFileUpload, error) {
+	// Helper method to get KeeperFileUpload struct from the file path
+	if fileName == "" {
+		fileName = path.Base(filePath)
+	}
+	if fileTitle == "" {
+		fileTitle = fileName
+	}
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+	if fileDataBytes, err := ioutil.ReadFile(filePath); err == nil {
+		return &KeeperFileUpload{
+			Name:  fileName,
+			Title: fileTitle,
+			Type:  mimeType,
+			Data:  fileDataBytes,
+		}, nil
+	} else {
+		return nil, err
+	}
+}
+
+type KeeperFileData struct {
+	Title        string `json:"title,omitempty"`
+	Name         string `json:"name,omitempty"`
+	Type         string `json:"type,omitempty"`
+	Size         int64  `json:"size,omitempty"`
+	LastModified int64  `json:"lastModified,omitempty"`
+}
+
 type RecordField struct {
 	Type     string
 	Label    string
@@ -1456,4 +1504,21 @@ func (r SecretsManagerResponse) ExpiresOnStr(dateFormat string) string {
 	// "2006-01-02 15:04:05" = "%Y-%m-%d %H:%M:%S"
 	// RFC3339 = "2006-01-02T15:04:05Z07:00"
 	// RFC3339Nano = "2006-01-02T15:04:05.999999999Z07:00"
+}
+
+type AddFileResponse struct {
+	Url               string `json:"url"`
+	Parameters        string `json:"parameters"`
+	SuccessStatusCode int    `json:"successStatusCode"`
+}
+
+func AddFileResponseFromJson(jsonData string) (*AddFileResponse, error) {
+	bytes := []byte(jsonData)
+	res := AddFileResponse{}
+
+	if err := json.Unmarshal(bytes, &res); err == nil {
+		return &res, nil
+	} else {
+		return nil, fmt.Errorf("Error deserializing AddFileResponse from JSON: " + err.Error())
+	}
 }

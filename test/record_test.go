@@ -18,22 +18,22 @@ func TestLoginRecordPassword(t *testing.T) {
 	// 'fields': [...{'type': 'password', 'value': ['My Password']}...]
 	goodRes := NewMockResponse([]byte{}, 200, nil)
 	good := goodRes.AddRecord("Good Record", "login", "", nil, nil)
-	good.Field("login", "", "My Login")
-	good.Field("password", "", "My Password")
+	good.Field("login", "", "", "", "My Login")
+	good.Field("password", "", "", "", "My Password")
 
 	// A bad record. This would be like if someone removed a password text from an existing field.
 	// 'fields': [...{'type': 'password', 'value': []}...]
 	badRes := NewMockResponse([]byte{}, 200, nil)
 	bad := badRes.AddRecord("Bad Record", "login", "", nil, nil)
-	bad.Field("login", "", "My Login")
-	bad.Field("password", "", []interface{}{})
+	bad.Field("login", "", "", "", "My Login")
+	bad.Field("password", "", "", "", []interface{}{})
 
 	// An ugly record. The application didn't even add the field. We need to set flags to prune empty fields.
 	// 'fields': [...]
 	uglyRes := NewMockResponse([]byte{}, 200, &MockFlags{PruneEmptyFields: true})
 	ugly := uglyRes.AddRecord("Ugly Record", "login", "", nil, nil)
-	ugly.Field("login", "", "My Login")
-	ugly.Field("password", "", []interface{}{}) // this will be removed from the fields array.
+	ugly.Field("login", "", "", "", "My Login")
+	ugly.Field("password", "", "", "", []interface{}{}) // this will be removed from the fields array.
 
 	MockResponseQueue.AddMockResponse(goodRes)
 	MockResponseQueue.AddMockResponse(badRes)
