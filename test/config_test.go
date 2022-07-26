@@ -1,10 +1,13 @@
 package test
 
 import (
+	"bytes"
+	"encoding/binary"
 	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	ksm "github.com/keeper-security/secrets-manager-go/core"
 )
@@ -447,5 +450,59 @@ func TestInMemoryBase64ConfigViaEnv(t *testing.T) {
 	// Client key (one time token) should be removed
 	if sm.Config.Get(ksm.KEY_CLIENT_KEY) != "" {
 		t.Error("found client key (one time token), should be missing.")
+	}
+}
+
+func TestEncoding(t *testing.T) {
+	mockConfig := MockConfig{}.MakeConfig(nil, "", "", "")
+	configJson := MockConfig{}.MakeJson(mockConfig)
+
+	if f, err := ioutil.TempFile("", ""); err == nil {
+		defer func() {
+			f.Close()
+			os.Remove(f.Name())
+		}()
+
+		utf16Json := utf16.Encode([]rune(configJson))
+		wbuf := new(bytes.Buffer)
+		if err := binary.Write(wbuf, binary.LittleEndian, utf16Json); err != nil {
+			t.Error("binary.Write failed:", err)
+		}
+
+		if err := ioutil.WriteFile(f.Name(), append([]byte{0xFF, 0xFE}, []byte(wbuf.Bytes())...), 0644); err == nil {
+			config := ksm.NewFileKeyValueStorage(f.Name())
+			dictConfig := config.ReadStorage()
+			if len(dictConfig) != 0 {
+				t.Error("found valid UTF16LE config, should be empty.")
+			}
+		} else {
+			t.Error(err.Error())
+		}
+
+		wbuf.Reset()
+		if err := binary.Write(wbuf, binary.BigEndian, utf16Json); err != nil {
+			t.Error("binary.Write failed:", err)
+		}
+		if err := ioutil.WriteFile(f.Name(), append([]byte{0xFE, 0xFF}, []byte(wbuf.Bytes())...), 0644); err == nil {
+			config := ksm.NewFileKeyValueStorage(f.Name())
+			dictConfig := config.ReadStorage()
+			if len(dictConfig) != 0 {
+				t.Error("found valid UTF16BE config, should be empty.")
+			}
+		} else {
+			t.Error(err.Error())
+		}
+
+		if err := ioutil.WriteFile(f.Name(), append([]byte{0xEF, 0xBB, 0xBF}, []byte(configJson)...), 0644); err == nil {
+			config := ksm.NewFileKeyValueStorage(f.Name())
+			dictConfig := config.ReadStorage()
+			if len(dictConfig) == 0 {
+				t.Error("found invalid UTF8BOM config, JSON config should load ignoring BOM.")
+			}
+		} else {
+			t.Error(err.Error())
+		}
+	} else {
+		t.Error(err.Error())
 	}
 }

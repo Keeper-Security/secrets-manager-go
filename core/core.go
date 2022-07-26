@@ -301,6 +301,10 @@ func (c *SecretsManager) encryptAndSignPayload(transmissionKey *TransmissionKey,
 	switch v := payload.(type) {
 	case nil:
 		return nil, errors.New("error converting payload - payload == nil")
+	case *CreatePayload:
+		if payloadJsonStr, err = v.CreatePayloadToJson(); err != nil {
+			return nil, errors.New("error converting create payload to JSON: " + err.Error())
+		}
 	case *GetPayload:
 		if payloadJsonStr, err = v.GetPayloadToJson(); err != nil {
 			return nil, errors.New("error converting get payload to JSON: " + err.Error())
@@ -309,9 +313,9 @@ func (c *SecretsManager) encryptAndSignPayload(transmissionKey *TransmissionKey,
 		if payloadJsonStr, err = v.UpdatePayloadToJson(); err != nil {
 			return nil, errors.New("error converting update payload to JSON: " + err.Error())
 		}
-	case *CreatePayload:
-		if payloadJsonStr, err = v.CreatePayloadToJson(); err != nil {
-			return nil, errors.New("error converting create payload to JSON: " + err.Error())
+	case *DeletePayload:
+		if payloadJsonStr, err = v.DeletePayloadToJson(); err != nil {
+			return nil, errors.New("error converting delete payload to JSON: " + err.Error())
 		}
 	case *FileUploadPayload:
 		if payloadJsonStr, err = v.FileUploadPayloadToJson(); err != nil {
@@ -388,6 +392,22 @@ func (c *SecretsManager) prepareUpdatePayload(record *Record) (res *UpdatePayloa
 		payload.Data = BytesToUrlSafeStr(encryptedRawJsonBytes)
 	} else {
 		return nil, err
+	}
+
+	return &payload, nil
+}
+
+func (c *SecretsManager) prepareDeletePayload(recordUids []string) (res *DeletePayload, err error) {
+	clientId := c.Config.Get(KEY_CLIENT_ID)
+	if clientId == "" {
+		return nil, errors.New("client ID is missing from the configuration")
+	}
+
+	klog.Info(fmt.Sprintf("recordUIDs: %v", recordUids))
+	payload := DeletePayload{
+		ClientVersion: keeperSecretsManagerClientId,
+		ClientId:      c.Config.Get(KEY_CLIENT_ID),
+		RecordUids:    recordUids,
 	}
 
 	return &payload, nil
@@ -1018,6 +1038,16 @@ func (c *SecretsManager) fileUpload(url, parameters string, successStatusCode in
 	klog.Debug(fmt.Sprintf("Finished uploading file data. Status code: %d, response data: %s", rs.StatusCode, string(rsBody)))
 
 	return nil
+}
+
+func (c *SecretsManager) DeleteSecrets(recrecordUids []string) error {
+	payload, err := c.prepareDeletePayload(recrecordUids)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.PostQuery("delete_secret", payload)
+	return err
 }
 
 func (c *SecretsManager) CreateSecret(record *Record) (recordUid string, err error) {
