@@ -120,6 +120,32 @@ func (p *CreatePayload) CreatePayloadFromJson(jsonData string) {
 	}
 }
 
+type DeletePayload struct {
+	ClientVersion string   `json:"clientVersion"`
+	ClientId      string   `json:"clientId"`
+	RecordUids    []string `json:"recordUids"`
+}
+
+func (p *DeletePayload) DeletePayloadToJson() (string, error) {
+	if pb, err := json.Marshal(p); err == nil {
+		return string(pb), nil
+	} else {
+		klog.Error("Error serializing DeletePayload to JSON: " + err.Error())
+		return "", err
+	}
+}
+
+func (p *DeletePayload) DeletePayloadFromJson(jsonData string) {
+	bytes := []byte(jsonData)
+	res := DeletePayload{}
+
+	if err := json.Unmarshal(bytes, &res); err == nil {
+		*p = res
+	} else {
+		klog.Error("Error deserializing DeletePayload from JSON: " + err.Error())
+	}
+}
+
 type FileUploadPayload struct {
 	ClientVersion   string `json:"clientVersion"`
 	ClientId        string `json:"clientId"`

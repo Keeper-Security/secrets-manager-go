@@ -1,12 +1,14 @@
 package core
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	klog "github.com/keeper-security/secrets-manager-go/core/logger"
 )
@@ -39,7 +41,26 @@ func (f *fileKeyValueStorage) ReadStorage() map[string]interface{} {
 		return map[string]interface{}{}
 	}
 
+	// RFC3629 - having the BOM in JSON string is forbidden
+	// Implementations MUST NOT add a byte order mark (U+FEFF)
+	// Implementations that parse JSON texts MAY ignore BOM rather than treating it as an error.
+	// In JSON BOM is useless and will always appear as the octet sequence EF BB BF.
+	if len(content) >= 3 && content[0] == 0xef && content[1] == 0xbb && content[2] == 0xbf {
+		content = content[3:]
+	}
+
+	// check for valid UTF-8, check for UTF-16 BE/LE separately
+	// all 128 ASCII chars are also valid UTF-8 but 0x00 must be escaped in JSON
+	if !utf8.Valid(content) ||
+		(len(content) > 1 && (content[0] == 0 || content[1] == 0)) {
+		klog.Error("Config file is not utf-8 encoded JSON.")
+		return map[string]interface{}{}
+	}
+
+	// If it was an empty file, overwrite with the JSON config
+	content = bytes.TrimSpace(content)
 	if len(content) == 0 {
+		klog.Warning("Looks like config file is empty.")
 		content = []byte("{}")
 	}
 
