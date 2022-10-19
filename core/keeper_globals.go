@@ -9,8 +9,8 @@ import (
 
 const (
 	versionMajor                 string = "16"
-	version                      string = "16.3.2"
-	keeperSecretsManagerClientId string = "mg16.3.2" // Golang client ID starts with "mg" + version
+	version                      string = "16.4.0"
+	keeperSecretsManagerClientId string = "mg16.4.0" // Golang client ID starts with "mg" + version
 	defaultKeeperHostname        string = "keepersecurity.com"
 	clientIdHashTag              string = "KEEPER_SECRETS_MANAGER_CLIENT_ID" // Tag for hashing the client key to client id
 )
@@ -21,6 +21,8 @@ var (
 		"EU":  "keepersecurity.eu",
 		"AU":  "keepersecurity.com.au",
 		"GOV": "govcloud.keepersecurity.us",
+		"JP":  "keepersecurity.jp",
+		"CA":  "keepersecurity.ca",
 	}
 )
 

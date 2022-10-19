@@ -301,6 +301,10 @@ func (c *SecretsManager) encryptAndSignPayload(transmissionKey *TransmissionKey,
 	switch v := payload.(type) {
 	case nil:
 		return nil, errors.New("error converting payload - payload == nil")
+	case *CreatePayload:
+		if payloadJsonStr, err = v.CreatePayloadToJson(); err != nil {
+			return nil, errors.New("error converting create payload to JSON: " + err.Error())
+		}
 	case *GetPayload:
 		if payloadJsonStr, err = v.GetPayloadToJson(); err != nil {
 			return nil, errors.New("error converting get payload to JSON: " + err.Error())
@@ -309,9 +313,9 @@ func (c *SecretsManager) encryptAndSignPayload(transmissionKey *TransmissionKey,
 		if payloadJsonStr, err = v.UpdatePayloadToJson(); err != nil {
 			return nil, errors.New("error converting update payload to JSON: " + err.Error())
 		}
-	case *CreatePayload:
-		if payloadJsonStr, err = v.CreatePayloadToJson(); err != nil {
-			return nil, errors.New("error converting create payload to JSON: " + err.Error())
+	case *DeletePayload:
+		if payloadJsonStr, err = v.DeletePayloadToJson(); err != nil {
+			return nil, errors.New("error converting delete payload to JSON: " + err.Error())
 		}
 	case *FileUploadPayload:
 		if payloadJsonStr, err = v.FileUploadPayloadToJson(); err != nil {
@@ -388,6 +392,22 @@ func (c *SecretsManager) prepareUpdatePayload(record *Record) (res *UpdatePayloa
 		payload.Data = BytesToUrlSafeStr(encryptedRawJsonBytes)
 	} else {
 		return nil, err
+	}
+
+	return &payload, nil
+}
+
+func (c *SecretsManager) prepareDeletePayload(recordUids []string) (res *DeletePayload, err error) {
+	clientId := c.Config.Get(KEY_CLIENT_ID)
+	if clientId == "" {
+		return nil, errors.New("client ID is missing from the configuration")
+	}
+
+	klog.Info(fmt.Sprintf("recordUIDs: %v", recordUids))
+	payload := DeletePayload{
+		ClientVersion: keeperSecretsManagerClientId,
+		ClientId:      c.Config.Get(KEY_CLIENT_ID),
+		RecordUids:    recordUids,
 	}
 
 	return &payload, nil
@@ -833,16 +853,16 @@ func (c *SecretsManager) fetchAndDecryptSecrets(recordFilter []string) (smr *Sec
 	return &smResponse, nil
 }
 
-func (c *SecretsManager) getSecretsFullResponse(uids []string) (records []*Record, folders []*Folder, err error) {
+func (c *SecretsManager) GetSecretsFullResponse(uids []string) (response *SecretsManagerResponse, err error) {
 	// Retrieve all records associated with the given application
 	recordsResp, err := c.fetchAndDecryptSecrets(uids)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if recordsResp.JustBound {
 		recordsResp, err = c.fetchAndDecryptSecrets(uids)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	}
 
@@ -852,12 +872,15 @@ func (c *SecretsManager) getSecretsFullResponse(uids []string) (records []*Recor
 		klog.Warning(recordsResp.Warnings)
 	}
 
-	return recordsResp.Records, recordsResp.Folders, nil
+	return recordsResp, nil
 }
 
 func (c *SecretsManager) GetSecrets(uids []string) (records []*Record, err error) {
-	records, _, err = c.getSecretsFullResponse(uids)
-	return records, err
+	resp, rerr := c.GetSecretsFullResponse(uids)
+	if rerr != nil || resp == nil {
+		return nil, rerr
+	}
+	return resp.Records, rerr
 }
 
 func (c *SecretsManager) GetSecretsByTitle(recordTitle string) (records []*Record, err error) {
@@ -1020,6 +1043,42 @@ func (c *SecretsManager) fileUpload(url, parameters string, successStatusCode in
 	return nil
 }
 
+func (c *SecretsManager) DeleteSecrets(recrecordUids []string) (statuses map[string]string, err error) {
+	statuses = map[string]string{}
+	if len(recrecordUids) == 0 {
+		return statuses, nil
+	}
+
+	payload, err := c.prepareDeletePayload(recrecordUids)
+	if err != nil {
+		return statuses, err
+	}
+
+	resp, err := c.PostQuery("delete_secret", payload)
+	if err != nil {
+		return statuses, err
+	}
+
+	if respJson := string(resp); respJson != "" {
+		dsr, err := DeleteSecretsResponseFromJson(respJson)
+		if err != nil {
+			return statuses, err
+		}
+		if dsr != nil && len(dsr.Records) > 0 {
+			for _, v := range dsr.Records {
+				message := v.ResponseCode
+				if v.ErrorMessage != "" {
+					message += ": " + v.ErrorMessage
+				}
+				statuses[v.RecordUid] = message
+				// Success - "UID": "ok", Error - "UID": "code: description"
+			}
+		}
+	}
+
+	return statuses, err
+}
+
 func (c *SecretsManager) CreateSecret(record *Record) (recordUid string, err error) {
 	payload, err := c.prepareCreatePayload(record)
 	if err != nil {
@@ -1044,12 +1103,17 @@ func (c *SecretsManager) CreateSecretWithRecordData(recUid, folderUid string, re
 	}
 
 	// Since we don't know folder's key where this record will be placed in,
-	// currently we have to retrieve all data that is share to this device/client
+	// currently we have to retrieve all data that is shared to this device/client
 	// and look for the folder's key in the returned folder data
 
-	_, folders, err := c.getSecretsFullResponse([]string{})
+	resp, err := c.GetSecretsFullResponse([]string{})
 	if err != nil {
 		return "", err
+	}
+
+	folders := []*Folder{}
+	if resp != nil && resp.Folders != nil {
+		folders = resp.Folders
 	}
 
 	foundFolder := GetFolderByKey(folderUid, folders)
