@@ -1522,3 +1522,24 @@ func AddFileResponseFromJson(jsonData string) (*AddFileResponse, error) {
 		return nil, fmt.Errorf("Error deserializing AddFileResponse from JSON: " + err.Error())
 	}
 }
+
+type DeleteSecretResponse struct {
+	RecordUid    string `json:"recordUid"`
+	ResponseCode string `json:"responseCode"`
+	ErrorMessage string `json:"errorMessage"`
+}
+
+type DeleteSecretsResponse struct {
+	Records []DeleteSecretResponse `json:"records"`
+}
+
+func DeleteSecretsResponseFromJson(jsonData string) (*DeleteSecretsResponse, error) {
+	bytes := []byte(jsonData)
+	res := DeleteSecretsResponse{}
+
+	if err := json.Unmarshal(bytes, &res); err == nil {
+		return &res, nil
+	} else {
+		return nil, fmt.Errorf("Error deserializing DeleteSecretsResponse from JSON: " + err.Error())
+	}
+}
