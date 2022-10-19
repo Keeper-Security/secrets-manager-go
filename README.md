@@ -144,6 +144,15 @@ secretToUpdate.SetPassword("NewPassword123$")
 secretsManager.Save(secretToUpdate)
 ```
 
+# Change Log
+
+## 1.4.0
+
+* Record removal
+* KSM-288 - 
+* KSM-306 - Added support for Japan and Canada data centers
+* KSM-312 - Improve password generation entropy
+
 For additional information please check our detailed [Go SDK docs](https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/golang-sdk) for Keeper Secrets Manager.
 
 ### Documentation
