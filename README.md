@@ -148,8 +148,7 @@ secretsManager.Save(secretToUpdate)
 
 ## 1.4.0
 
-* Record removal
-* KSM-288 - 
+* KSM-288 - Record removal 
 * KSM-306 - Added support for Japan and Canada data centers
 * KSM-312 - Improve password generation entropy
 
