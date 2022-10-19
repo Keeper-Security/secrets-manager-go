@@ -479,6 +479,7 @@ func generateOTP(base32Key string, counter int64, digits int, algo string) (stri
 }
 
 // Generate password
+const DefaultPasswordLength int = 32
 const AsciiLowercase string = "abcdefghijklmnopqrstuvwxyz"
 const AsciiUppercase string = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 const AsciiDigits string = "0123456789"
@@ -522,46 +523,176 @@ func shuffleString(text string) (string, error) {
 	return result, nil
 }
 
-func GeneratePassword(length, lowercase, uppercase, digits, specialCharacters int) (string, error) {
-	if length <= 0 {
-		length = 64
+// PasswordOptions provides complexity settings for GeneratePasswordWithOptions
+// Positive values specify minimum length, zero or negative - exact length
+// Generated password must have at least MinLength characters - exact values may be converted to min values
+// Empty strings or missing values will be substituted with a reasonable defaults
+// ex. passing nil will generate password with length = DefaultPasswordLength using all charsets
+type PasswordOptions struct {
+	MinLength               string
+	UppercaseLength         string
+	LowercaseLength         string
+	DigitsLength            string
+	SpecialCharactersLength string
+	SpecialCharacterSet     string
+}
+
+// GeneratePasswordWithOptions generates new password using provided options
+// If options is nil the new password will be generated using defaults
+// All lengths are optional and substituted with reasonable defaults when missing
+// To exclude a charset - set corresponding option to 0
+// To use default length value - set its option to empty string ""
+// Note: Any strings containing non integer values will be treated as empty string
+func GeneratePasswordWithOptions(options *PasswordOptions) (string, error) {
+	if options == nil {
+		return GeneratePassword(DefaultPasswordLength, "", "", "", "", AsciiSpecialCharacters)
 	}
-	if lowercase == 0 && uppercase == 0 && digits == 0 && specialCharacters == 0 {
-		increment := length / 4
-		lastincrement := increment + (length % 4)
-		lowercase, uppercase, digits = increment, increment, increment
-		specialCharacters = lastincrement
+
+	minLength := 0
+	if i, err := strconv.Atoi(options.MinLength); err == nil {
+		minLength = i
+	} else {
+		minLength = DefaultPasswordLength
+		klog.Warning("error converting MinLength='" + options.MinLength + "' to int - switching to default length: " + strconv.Itoa(DefaultPasswordLength))
+	}
+	return GeneratePassword(minLength,
+		options.LowercaseLength,
+		options.UppercaseLength,
+		options.DigitsLength,
+		options.SpecialCharactersLength,
+		options.SpecialCharacterSet)
+}
+
+// GeneratePassword returns a new password of specified minimum length
+// using provided number of uppercase, lowercase, digits and special characters.
+//
+// Empty strings or strings with invalid int values are treated as nil
+// and used only if sum of the non nil values don't reach minLength
+//
+// Note: If all character groups are unspecified or all have exact zero length
+// then password characters are chosen from all groups uniformly at random.
+//
+// Note: If all charset lengths are negative or 0 but can't reach min_length
+// then all exact/negative charset lengths will be treated as minimum number of characters instead.
+//
+// minLength is the minimum password length - default: 32
+// lowercase is the minimum number of lowercase characters if positive, exact if 0 or negative
+// uppercase is the minimum number of uppercase characters if positive, exact if 0 or negative
+// digits is the minimum number of digits if positive, exact if 0 or negative
+// specialCharacters is the minimum number of special characters if positive, exact if 0 or negative
+// specialCharacterSet is a string containing custom set of special characters to pick from
+func GeneratePassword(minLength int, lowercase, uppercase, digits, specialCharacters, specialCharacterSet string) (string, error) {
+	abs := func(x int) int {
+		if x < 0 {
+			return -x
+		}
+		return x
+	}
+	boolToInt := func(x bool) int {
+		if x {
+			return 1
+		}
+		return 0
+	}
+	type NullableInt struct {
+		Text     string
+		HasValue bool
+		Value    int
+	}
+	params := map[string]*NullableInt{
+		"lowercase":         {Text: lowercase},
+		"uppercase":         {Text: uppercase},
+		"digits":            {Text: digits},
+		"specialCharacters": {Text: specialCharacters},
+	}
+	for k, v := range params {
+		if v.Text != "" {
+			if i, err := strconv.Atoi(v.Text); err == nil {
+				v.HasValue = true
+				v.Value = i
+			} else {
+				klog.Warning("error converting '" + k + "' length '" + v.Text + "' to int - switching to default value '': " + err.Error())
+			}
+		}
+	}
+
+	if minLength <= 0 {
+		minLength = DefaultPasswordLength
+	}
+	if specialCharacterSet == "" {
+		specialCharacterSet = AsciiSpecialCharacters
+	}
+
+	sumCategories := 0
+	numExactCounts := 0
+	counts := [...]*NullableInt{params["lowercase"], params["uppercase"], params["digits"], params["specialCharacters"]}
+	for _, i := range counts {
+		if i.HasValue {
+			sumCategories += abs(i.Value)
+			if i.Value <= 0 {
+				numExactCounts++
+			}
+		}
+	}
+
+	// If all lengths are exact/negative but don't reach min_length - convert to minimum/positive lengths
+	if len(counts) == numExactCounts && sumCategories < minLength {
+		if params["lowercase"].HasValue && params["lowercase"].Value < 0 {
+			params["lowercase"].Value = abs(params["lowercase"].Value)
+		}
+		if params["uppercase"].HasValue && params["uppercase"].Value < 0 {
+			params["uppercase"].Value = abs(params["uppercase"].Value)
+		}
+		if params["digits"].HasValue && params["digits"].Value < 0 {
+			params["digits"].Value = abs(params["digits"].Value)
+		}
+		if params["specialCharacters"].HasValue && params["specialCharacters"].Value < 0 {
+			params["specialCharacters"].Value = abs(params["specialCharacters"].Value)
+		}
+	}
+
+	extraChars := ""
+	extraCount := 0
+	if minLength > sumCategories {
+		extraCount = minLength - sumCategories
+	}
+	if !params["lowercase"].HasValue || params["lowercase"].Value > 0 {
+		extraChars += AsciiLowercase
+	}
+	if !params["uppercase"].HasValue || params["uppercase"].Value > 0 {
+		extraChars += AsciiUppercase
+	}
+	if !params["digits"].HasValue || params["digits"].Value > 0 {
+		extraChars += AsciiDigits
+	}
+	if !params["specialCharacters"].HasValue || params["specialCharacters"].Value > 0 {
+		extraChars += specialCharacterSet
+	}
+	if extraCount > 0 && extraChars == "" {
+		extraChars = AsciiLowercase + AsciiUppercase + AsciiDigits + specialCharacterSet
+	}
+
+	type categoryItem struct {
+		count   int
+		charset string
+	}
+	categoryMap := []categoryItem{
+		{count: boolToInt(params["lowercase"].HasValue) * abs(params["lowercase"].Value), charset: AsciiLowercase},
+		{count: boolToInt(params["uppercase"].HasValue) * abs(params["uppercase"].Value), charset: AsciiUppercase},
+		{count: boolToInt(params["digits"].HasValue) * abs(params["digits"].Value), charset: AsciiDigits},
+		{count: boolToInt(params["specialCharacters"].HasValue) * abs(params["specialCharacters"].Value), charset: specialCharacterSet},
+		{count: extraCount, charset: extraChars},
 	}
 
 	passwordCharacters := ""
-	if lowercase > 0 {
-		if sample, err := randomSample(lowercase, AsciiLowercase); err == nil {
-			passwordCharacters += sample
-		} else {
-			return passwordCharacters, err
+	for _, kvp := range categoryMap {
+		if kvp.count > 0 {
+			if sample, err := randomSample(kvp.count, kvp.charset); err == nil {
+				passwordCharacters += sample
+			} else {
+				return passwordCharacters, err
+			}
 		}
 	}
-	if uppercase > 0 {
-		if sample, err := randomSample(uppercase, AsciiUppercase); err == nil {
-			passwordCharacters += sample
-		} else {
-			return passwordCharacters, err
-		}
-	}
-	if digits > 0 {
-		if sample, err := randomSample(digits, AsciiDigits); err == nil {
-			passwordCharacters += sample
-		} else {
-			return passwordCharacters, err
-		}
-	}
-	if specialCharacters > 0 {
-		if sample, err := randomSample(specialCharacters, AsciiSpecialCharacters); err == nil {
-			passwordCharacters += sample
-		} else {
-			return passwordCharacters, err
-		}
-	}
-
 	return shuffleString(passwordCharacters)
 }
