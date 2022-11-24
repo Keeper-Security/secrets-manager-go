@@ -30,6 +30,7 @@ type FieldTokenFlag byte
 const (
 	FieldTokenType FieldTokenFlag = 1 << iota
 	FieldTokenLabel
+	FieldTokenBoth = FieldTokenType | FieldTokenLabel
 )
 
 type Record struct {
@@ -151,15 +152,9 @@ func (r *Record) SetNotes(notes string) {
 	}
 }
 
-func (r *Record) GetFieldsByMask(fieldToken string, fieldTokenFlag FieldTokenFlag, fieldType FieldSectionFlag) []map[string]interface{} {
-	result := []map[string]interface{}{}
-
-	if fieldToken == "" {
-		return result
-	}
-
+func (r *Record) GetFieldsBySection(fieldSectionType FieldSectionFlag) []interface{} {
 	fields := []interface{}{}
-	if fieldType&FieldSectionFields == FieldSectionFields {
+	if fieldSectionType&FieldSectionFields == FieldSectionFields {
 		if iFields, ok := r.RecordDict["fields"]; ok {
 			if aFields, ok := iFields.([]interface{}); ok {
 				fields = append(fields, aFields...)
@@ -167,13 +162,22 @@ func (r *Record) GetFieldsByMask(fieldToken string, fieldTokenFlag FieldTokenFla
 		}
 	}
 
-	if fieldType&FieldSectionCustom == FieldSectionCustom {
+	if fieldSectionType&FieldSectionCustom == FieldSectionCustom {
 		if iFields, ok := r.RecordDict["custom"]; ok {
 			if aFields, ok := iFields.([]interface{}); ok {
 				fields = append(fields, aFields...)
 			}
 		}
 	}
+	return fields
+}
+
+// GetFieldsByMask returns all fields from the corresponding field section (fields, custom or both)
+// where fieldToken matches the FieldTokenFlag (type, label or both)
+func (r *Record) GetFieldsByMask(fieldToken string, fieldTokenFlag FieldTokenFlag, fieldType FieldSectionFlag) []map[string]interface{} {
+	result := []map[string]interface{}{}
+
+	fields := r.GetFieldsBySection(fieldType)
 
 	for i := range fields {
 		if fmap, ok := fields[i].(map[string]interface{}); ok {

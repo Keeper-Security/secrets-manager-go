@@ -78,6 +78,16 @@ func UrlSafeStrToBytes(text string) []byte {
 	}
 }
 
+// UrlSafeStrToBytesSafe decodes base64 text to bytes, returns empty byte slice on error
+func UrlSafeStrToBytesSafe(text string) []byte {
+	text = strings.TrimRight(text, "=")
+	result, err := base64.RawURLEncoding.DecodeString(text)
+	if err != nil {
+		result = []byte{}
+	}
+	return result
+}
+
 func BytesToBase64(data []byte) string {
 	return base64.StdEncoding.EncodeToString(data)
 }
@@ -88,6 +98,13 @@ func Base64ToBytes(text string) []byte {
 
 func Base64ToString(base64Text string) string {
 	if bytes := UrlSafeStrToBytes(base64Text); len(bytes) > 0 {
+		return BytesToString(bytes)
+	}
+	return ""
+}
+
+func Base64ToStringSafe(base64Text string) string {
+	if bytes := UrlSafeStrToBytesSafe(base64Text); len(bytes) > 0 {
 		return BytesToString(bytes)
 	}
 	return ""
