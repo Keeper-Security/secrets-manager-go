@@ -769,6 +769,34 @@ func (r *Record) SetCustomFieldValue(fieldType string, value interface{}) error 
 	return nil
 }
 
+// AddCustomField adds new custom field to the record
+// The new field must satisfy the IsFieldClass function
+func (r *Record) AddCustomField(field interface{}) error {
+	if !IsFieldClass(field) {
+		return fmt.Errorf("cannot add custom field - unknown field type for %v ", field)
+	}
+
+	var iCustom interface{} = []interface{}{}
+	if iFields, found := r.RecordDict["custom"]; found {
+		iCustom = iFields
+	} else {
+		r.RecordDict["custom"] = iCustom
+	}
+
+	if sCustom, ok := iCustom.([]interface{}); ok {
+		if fmap := ObjToDict(field); fmap != nil {
+			sCustom = append(sCustom, fmap)
+			r.RecordDict["custom"] = sCustom
+			r.update()
+			return nil
+		} else {
+			return fmt.Errorf("cannot add custom field - error converting to JSON, field: %v ", field)
+		}
+	} else {
+		return fmt.Errorf("cannot add custom field - custom[] is not the expected array type, custom: %v ", iCustom)
+	}
+}
+
 func (r *Record) CanClone() bool {
 	if strings.TrimSpace(r.folderUid) != "" && len(r.folderKeyBytes) > 0 {
 		return true
