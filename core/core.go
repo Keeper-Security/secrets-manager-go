@@ -1043,13 +1043,13 @@ func (c *SecretsManager) fileUpload(url, parameters string, successStatusCode in
 	return nil
 }
 
-func (c *SecretsManager) DeleteSecrets(recrecordUids []string) (statuses map[string]string, err error) {
+func (c *SecretsManager) DeleteSecrets(recordUids []string) (statuses map[string]string, err error) {
 	statuses = map[string]string{}
-	if len(recrecordUids) == 0 {
+	if len(recordUids) == 0 {
 		return statuses, nil
 	}
 
-	payload, err := c.prepareDeletePayload(recrecordUids)
+	payload, err := c.prepareDeletePayload(recordUids)
 	if err != nil {
 		return statuses, err
 	}
