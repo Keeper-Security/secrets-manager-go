@@ -1765,7 +1765,7 @@ func (c *SecretsManager) GetNotationResults(notation string) ([]string, error) {
 
 		files := []*KeeperFile{}
 		for _, f := range record.Files {
-			if parameter == f.Name || parameter == f.Uid {
+			if parameter == f.Name || parameter == f.Title || parameter == f.Uid {
 				files = append(files, f)
 			}
 		}
