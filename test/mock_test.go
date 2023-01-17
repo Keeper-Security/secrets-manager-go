@@ -230,7 +230,7 @@ func (t RewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 func GetRandomUid() (uid string, err error) {
 	blk := make([]byte, 16)
 	_, err = rand.Read(blk)
-	uid = fmt.Sprintf("%x", blk)
+	uid = fmt.Sprintf("%x", blk)[:22]
 	return
 }
 
@@ -364,6 +364,7 @@ type MockRecord struct {
 	Uid          string
 	RecordType   string
 	Title        string
+	Notes        string
 	IsEditable   bool
 	Files        map[string]interface{}
 	Fields       []map[string]interface{}
@@ -382,6 +383,7 @@ func NewMockRecord(recordType, uid, title string) *MockRecord {
 		Uid:          uid,
 		RecordType:   recordType,
 		Title:        title,
+		Notes:        "",
 		IsEditable:   false,
 		Files:        map[string]interface{}{},
 		Fields:       []map[string]interface{}{},
@@ -394,6 +396,7 @@ func ConvertKeeperRecord(keeperRecord *core.Record) *MockRecord {
 		Uid:          keeperRecord.Uid,
 		RecordType:   keeperRecord.Type(),
 		Title:        keeperRecord.Title(),
+		Notes:        keeperRecord.Notes(),
 		IsEditable:   false,
 		Files:        map[string]interface{}{},
 		Fields:       []map[string]interface{}{},
@@ -502,8 +505,9 @@ func (r *MockRecord) Dump(secret []byte, flags *MockFlags) map[string]interface{
 	}
 
 	dataMap := map[string]interface{}{
-		"title":  r.Title,
 		"type":   r.RecordType,
+		"title":  r.Title,
+		"notes":  r.Notes,
 		"fields": fields,
 		"custom": custom,
 	}

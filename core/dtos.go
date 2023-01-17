@@ -475,7 +475,7 @@ func NewRecordFromJson(recordDict map[string]interface{}, secretKey []byte, fold
 	return &record
 }
 
-// FindFileByTitle finds file by file title
+// FindFileByTitle finds the first file with matching title
 func (r *Record) FindFileByTitle(title string) *KeeperFile {
 	for i := range r.Files {
 		if r.Files[i].Title == title {
@@ -483,6 +483,37 @@ func (r *Record) FindFileByTitle(title string) *KeeperFile {
 		}
 	}
 	return nil
+}
+
+// FindFileByName finds the first file with matching filename
+func (r *Record) FindFileByFilename(filename string) *KeeperFile {
+	for i := range r.Files {
+		if r.Files[i].Name == filename {
+			return r.Files[i]
+		}
+	}
+	return nil
+}
+
+// FindFile finds the first file with matching file UID, name or title
+func (r *Record) FindFile(name string) *KeeperFile {
+	for i := range r.Files {
+		if r.Files[i].Uid == name || r.Files[i].Name == name || r.Files[i].Title == name {
+			return r.Files[i]
+		}
+	}
+	return nil
+}
+
+// FindFiles finds all files with matching file UID, name or title
+func (r *Record) FindFiles(name string) []*KeeperFile {
+	result := []*KeeperFile{}
+	for i := range r.Files {
+		if r.Files[i].Uid == name || r.Files[i].Name == name || r.Files[i].Title == name {
+			result = append(result, r.Files[i])
+		}
+	}
+	return result
 }
 
 func (r *Record) DownloadFileByTitle(title string, path string) bool {
