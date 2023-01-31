@@ -38,8 +38,9 @@ func TestMissingConfig(t *testing.T) {
 	defer os.RemoveAll(tempDirName)
 
 	if err := os.Chdir(tempDirName); err == nil {
-		sm := ksm.NewSecretsManager(nil)
-		t.Errorf("Found config file, should be missing. Config is empty: %t", sm.Config.IsEmpty())
+		if sm := ksm.NewSecretsManager(nil); sm != nil {
+			t.Errorf("Found config file, should be missing. Config is empty: %t", sm.Config.IsEmpty())
+		}
 	} else {
 		t.Error(err.Error())
 	}
@@ -102,7 +103,7 @@ func TestOverwriteViaArgs(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDirName)
 
-	mockConfig := MockConfig{}.MakeConfig(nil, "", "", "")
+	mockConfig := MockConfig{}.MakeConfig(nil, "localhost:ABC123", "", "")
 	configJson := MockConfig{}.MakeJson(mockConfig)
 	if err := os.Chdir(tempDirName); err == nil {
 		if err := ioutil.WriteFile(defaultConfigName, []byte(configJson), 0644); err == nil {
@@ -123,7 +124,7 @@ func TestOverwriteViaArgs(t *testing.T) {
 }
 
 func TestOnetimeTokenFormatsAbbrev(t *testing.T) {
-	mockConfig := MockConfig{}.MakeConfig([]string{"clientKey"}, "", "", "")
+	mockConfig := MockConfig{}.MakeConfig([]string{"clientKey"}, "US:ABC123", "", "")
 	base64ConfigStr := MockConfig{}.MakeBase64(mockConfig)
 
 	config := ksm.NewMemoryKeyValueStorage(base64ConfigStr)
@@ -144,7 +145,7 @@ func TestOnetimeTokenFormatsAbbrev(t *testing.T) {
 	}
 }
 func TestOnetimeTokenFormatsHostname(t *testing.T) {
-	mockConfig := MockConfig{}.MakeConfig([]string{"clientKey"}, "", "", "")
+	mockConfig := MockConfig{}.MakeConfig([]string{"clientKey"}, "fake.keepersecurity.com:ABC123", "", "")
 	base64ConfigStr := MockConfig{}.MakeBase64(mockConfig)
 
 	config := ksm.NewMemoryKeyValueStorage(base64ConfigStr)

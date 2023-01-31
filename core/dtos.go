@@ -30,6 +30,7 @@ type FieldTokenFlag byte
 const (
 	FieldTokenType FieldTokenFlag = 1 << iota
 	FieldTokenLabel
+	FieldTokenBoth = FieldTokenType | FieldTokenLabel
 )
 
 type Record struct {
@@ -151,15 +152,9 @@ func (r *Record) SetNotes(notes string) {
 	}
 }
 
-func (r *Record) GetFieldsByMask(fieldToken string, fieldTokenFlag FieldTokenFlag, fieldType FieldSectionFlag) []map[string]interface{} {
-	result := []map[string]interface{}{}
-
-	if fieldToken == "" {
-		return result
-	}
-
+func (r *Record) GetFieldsBySection(fieldSectionType FieldSectionFlag) []interface{} {
 	fields := []interface{}{}
-	if fieldType&FieldSectionFields == FieldSectionFields {
+	if fieldSectionType&FieldSectionFields == FieldSectionFields {
 		if iFields, ok := r.RecordDict["fields"]; ok {
 			if aFields, ok := iFields.([]interface{}); ok {
 				fields = append(fields, aFields...)
@@ -167,13 +162,22 @@ func (r *Record) GetFieldsByMask(fieldToken string, fieldTokenFlag FieldTokenFla
 		}
 	}
 
-	if fieldType&FieldSectionCustom == FieldSectionCustom {
+	if fieldSectionType&FieldSectionCustom == FieldSectionCustom {
 		if iFields, ok := r.RecordDict["custom"]; ok {
 			if aFields, ok := iFields.([]interface{}); ok {
 				fields = append(fields, aFields...)
 			}
 		}
 	}
+	return fields
+}
+
+// GetFieldsByMask returns all fields from the corresponding field section (fields, custom or both)
+// where fieldToken matches the FieldTokenFlag (type, label or both)
+func (r *Record) GetFieldsByMask(fieldToken string, fieldTokenFlag FieldTokenFlag, fieldType FieldSectionFlag) []map[string]interface{} {
+	result := []map[string]interface{}{}
+
+	fields := r.GetFieldsBySection(fieldType)
 
 	for i := range fields {
 		if fmap, ok := fields[i].(map[string]interface{}); ok {
@@ -471,7 +475,7 @@ func NewRecordFromJson(recordDict map[string]interface{}, secretKey []byte, fold
 	return &record
 }
 
-// FindFileByTitle finds file by file title
+// FindFileByTitle finds the first file with matching title
 func (r *Record) FindFileByTitle(title string) *KeeperFile {
 	for i := range r.Files {
 		if r.Files[i].Title == title {
@@ -479,6 +483,37 @@ func (r *Record) FindFileByTitle(title string) *KeeperFile {
 		}
 	}
 	return nil
+}
+
+// FindFileByName finds the first file with matching filename
+func (r *Record) FindFileByFilename(filename string) *KeeperFile {
+	for i := range r.Files {
+		if r.Files[i].Name == filename {
+			return r.Files[i]
+		}
+	}
+	return nil
+}
+
+// FindFile finds the first file with matching file UID, name or title
+func (r *Record) FindFile(name string) *KeeperFile {
+	for i := range r.Files {
+		if r.Files[i].Uid == name || r.Files[i].Name == name || r.Files[i].Title == name {
+			return r.Files[i]
+		}
+	}
+	return nil
+}
+
+// FindFiles finds all files with matching file UID, name or title
+func (r *Record) FindFiles(name string) []*KeeperFile {
+	result := []*KeeperFile{}
+	for i := range r.Files {
+		if r.Files[i].Uid == name || r.Files[i].Name == name || r.Files[i].Title == name {
+			result = append(result, r.Files[i])
+		}
+	}
+	return result
 }
 
 func (r *Record) DownloadFileByTitle(title string, path string) bool {
@@ -763,6 +798,34 @@ func (r *Record) SetCustomFieldValue(fieldType string, value interface{}) error 
 	field["value"] = value
 	r.update()
 	return nil
+}
+
+// AddCustomField adds new custom field to the record
+// The new field must satisfy the IsFieldClass function
+func (r *Record) AddCustomField(field interface{}) error {
+	if !IsFieldClass(field) {
+		return fmt.Errorf("cannot add custom field - unknown field type for %v ", field)
+	}
+
+	var iCustom interface{} = []interface{}{}
+	if iFields, found := r.RecordDict["custom"]; found {
+		iCustom = iFields
+	} else {
+		r.RecordDict["custom"] = iCustom
+	}
+
+	if sCustom, ok := iCustom.([]interface{}); ok {
+		if fmap := ObjToDict(field); fmap != nil {
+			sCustom = append(sCustom, fmap)
+			r.RecordDict["custom"] = sCustom
+			r.update()
+			return nil
+		} else {
+			return fmt.Errorf("cannot add custom field - error converting to JSON, field: %v ", field)
+		}
+	} else {
+		return fmt.Errorf("cannot add custom field - custom[] is not the expected array type, custom: %v ", iCustom)
+	}
 }
 
 func (r *Record) CanClone() bool {

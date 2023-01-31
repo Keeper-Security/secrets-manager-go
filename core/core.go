@@ -23,14 +23,6 @@ const (
 	defaultKeeperServerPublicKeyId string = "10"
 )
 
-// var (
-// 	// Field types that can be inflated. Used for notation.
-// 	inflateRefTypes = map[string][]string{
-// 		"addressRef": []string{"address"},
-// 		"cardRef":    []string{"paymentCard", "text", "pinCode", "addressRef"},
-// 	}
-// )
-
 type ClientOptions struct {
 	// Token specifies a One-Time Access Token used
 	// to generate the configuration to use with core.SecretsManager client
@@ -59,6 +51,8 @@ type SecretsManager struct {
 	cache          ICache
 }
 
+// NewSecretsManager returns new *SecretsManager initialized with the options provided.
+// If the configuration file cannot be initialized or parsed returns nil
 func NewSecretsManager(options *ClientOptions, arg ...interface{}) *SecretsManager {
 	// set default values
 	sm := &SecretsManager{
@@ -87,7 +81,8 @@ func NewSecretsManager(options *ClientOptions, arg ...interface{}) *SecretsManag
 		if tokenParts := strings.Split(token, ":"); len(tokenParts) == 1 {
 			// token in legacy format without hostname prefix
 			if hostname == "" {
-				klog.Panicln("The hostname must be present in the token or provided as a parameter")
+				klog.Error("The hostname must be present in the token or provided as a parameter")
+				return nil
 			}
 			sm.Token = token
 			sm.Hostname = hostname
@@ -106,7 +101,7 @@ func NewSecretsManager(options *ClientOptions, arg ...interface{}) *SecretsManag
 			} else {
 				// token contains url prefix: ex. "ksm.company.com:ONE_TIME_TOKEN"
 				if hostname != "" && hostname != tokenPart0 {
-					klog.Warning(fmt.Sprintf("Replacing hostname '%s' with token based hostname '%s'", hostname, tokenHost))
+					klog.Warning(fmt.Sprintf("Replacing hostname '%s' with token based hostname '%s'", hostname, tokenPart0))
 				}
 				sm.Hostname = tokenPart0
 			}
@@ -155,7 +150,10 @@ func NewSecretsManager(options *ClientOptions, arg ...interface{}) *SecretsManag
 		sm.Config.Set(KEY_SERVER_PUBLIC_KEY_ID, defaultKeeperServerPublicKeyId)
 	}
 
-	sm.init()
+	if err := sm.init(); err != nil {
+		klog.Error(err.Error())
+		return nil
+	}
 	return sm
 }
 
@@ -171,9 +169,37 @@ func (c *SecretsManager) SetCache(cache ICache) {
 	c.cache = cache
 }
 
-func (c *SecretsManager) init() {
+func (c *SecretsManager) init() error {
+	if !c.VerifySslCerts {
+		klog.Warning("WARNING: Running without SSL cert verification. " +
+			"Set 'SecretsManager.VerifySslCerts = True' or set 'KSM_SKIP_VERIFY=FALSE' " +
+			"to enable verification.")
+	}
+
 	clientId := strings.TrimSpace(c.Config.Get(KEY_CLIENT_ID))
-	if clientId != "" {
+
+	unboundToken := false
+	if strings.TrimSpace(c.Token) != "" {
+		unboundToken = true
+		if clientId != "" { // config is initialized
+			clientKey := c.Token
+			clientKeyBytes := UrlSafeStrToBytes(clientKey)
+			tokenClientId := Base64HmacFromString(clientKeyBytes, clientIdHashTag)
+			if tokenClientId == clientId { // with same token - check if bound
+				appKey := strings.TrimSpace(c.Config.Get(KEY_APP_KEY))
+				if appKey != "" { // and bound
+					unboundToken = false
+					klog.Warning("The storage is already initialized with same token")
+				} else { // not bound
+					klog.Warning("The storage is already initialized but not bound")
+				}
+			} else { // initialized with different token
+				return errors.New("the storage is already initialized with a different token - Client ID: " + clientId)
+			}
+		}
+	}
+
+	if clientId != "" && !unboundToken {
 		klog.Debug("Already bound")
 		if c.Config.Get(KEY_CLIENT_KEY) != "" {
 			c.Config.Delete(KEY_CLIENT_KEY)
@@ -181,7 +207,7 @@ func (c *SecretsManager) init() {
 	} else {
 		existingSecretKey := c.LoadSecretKey()
 		if esk := strings.TrimSpace(existingSecretKey); esk == "" {
-			klog.Panicln("Cannot locate One Time Token.")
+			return errors.New("cannot locate the One Time Token")
 		}
 
 		existingSecretKeyBytes := UrlSafeStrToBytes(existingSecretKey)
@@ -195,18 +221,15 @@ func (c *SecretsManager) init() {
 
 		if privateKeyStr := strings.TrimSpace(c.Config.Get(KEY_PRIVATE_KEY)); privateKeyStr == "" {
 			if privateKeyDer, err := GeneratePrivateKeyDer(); err == nil {
-				c.Config.Set(KEY_PRIVATE_KEY, BytesToBase64(privateKeyDer))
+				if cfg := c.Config.Set(KEY_PRIVATE_KEY, BytesToBase64(privateKeyDer)); len(cfg) < 1 {
+					return errors.New("failed to set the private key")
+				}
 			} else {
-				klog.Panicln("Failed to generate private key. " + err.Error())
+				return errors.New("failed to generate private key. " + err.Error())
 			}
 		}
 	}
-
-	if !c.VerifySslCerts {
-		klog.Warning("WARNING: Running without SSL cert verification. " +
-			"Set 'SecretsManager.VerifySslCerts = True' or set 'KSM_SKIP_VERIFY=FALSE' " +
-			"to enable verification.")
-	}
+	return nil
 }
 
 // Returns client_id from the environment variable, config file, or in the code
@@ -238,7 +261,8 @@ func (c *SecretsManager) LoadSecretKey() string {
 func (c *SecretsManager) GenerateTransmissionKey(keyId string) *TransmissionKey {
 	serverPublicKey, ok := keeperServerPublicKeys[keyId]
 	if !ok || strings.TrimSpace(serverPublicKey) == "" {
-		klog.Panicf("The public key id %s does not exist.", keyId)
+		klog.Error(fmt.Sprintf("The public key id %s does not exist.", keyId))
+		return nil
 	}
 
 	transmissionKey, err := GenerateRandomBytes(Aes256KeySize)
@@ -272,6 +296,10 @@ func (c *SecretsManager) PrepareContext() *Context {
 
 	// Generate the transmission key using the public key at the key id index
 	transmissionKey := c.GenerateTransmissionKey(keyId)
+	if transmissionKey == nil {
+		klog.Error("failed to prepare context - error(s) generating the transmission key")
+		return nil
+	}
 	clientId := strings.TrimSpace(c.Config.Get(KEY_CLIENT_ID))
 	secretKey := []byte{}
 
@@ -281,7 +309,8 @@ func (c *SecretsManager) PrepareContext() *Context {
 	}
 
 	if clientId == "" {
-		klog.Panicln("Client ID is missing from the configuration")
+		klog.Error("failed to prepare context - Client ID is missing from the configuration")
+		return nil
 	}
 	clientIdBytes := Base64ToBytes(clientId)
 	context := &Context{
@@ -561,8 +590,10 @@ func (c *SecretsManager) PostQuery(path string, payload interface{}) (body []byt
 	url := fmt.Sprintf("https://%s/api/rest/sm/v1/%s", keeperServer, path)
 	var transmissionKey *TransmissionKey
 	var ksmRs *KsmHttpResponse
-	if c.context != nil {
-		*c.context = c.PrepareContext()
+	if c.context != nil { // context is used in tests only
+		if pc := c.PrepareContext(); pc != nil {
+			*c.context = pc
+		}
 	}
 
 	for {
@@ -573,6 +604,10 @@ func (c *SecretsManager) PostQuery(path string, payload interface{}) (body []byt
 		}
 
 		transmissionKey = c.GenerateTransmissionKey(transmissionKeyId)
+		if transmissionKey == nil {
+			return nil, errors.New("error generating the transmission key")
+		}
+
 		if c.context != nil {
 			(*c.context).TransmissionKey = *transmissionKey
 		}
@@ -618,7 +653,8 @@ func (c *SecretsManager) PostQuery(path string, payload interface{}) (body []byt
 			if err != nil {
 				errMsg = err.Error()
 			}
-			klog.Panicln("POST Error: " + errMsg)
+			klog.Error("POST Error: " + errMsg)
+			return nil, errors.New("POST Error: " + errMsg)
 		}
 	}
 
@@ -713,9 +749,13 @@ func (c *SecretsManager) HandleHttpError(rs *http.Response, body []byte, httpErr
 		if len(keyId) == 0 {
 			msg = "The public key is blank from the server"
 		} else if _, found := keeperServerPublicKeys[keyId]; found {
-			c.Config.Set(KEY_SERVER_PUBLIC_KEY_ID, keyId)
-			// The only normal exit from this method
-			return true, nil
+			if cfg := c.Config.Set(KEY_SERVER_PUBLIC_KEY_ID, keyId); len(cfg) > 0 {
+				// The only normal exit from this method
+				return true, nil
+			} else {
+				// read-only or inaccessible configuration
+				return false, errors.New("failed to switch the server public key")
+			}
 		} else {
 			msg = fmt.Sprintf("The public key at %v does not exist in the SDK", keyId)
 		}
@@ -763,14 +803,18 @@ func (c *SecretsManager) fetchAndDecryptSecrets(recordFilter []string) (smr *Sec
 		}
 		encryptedMasterKey := UrlSafeStrToBytes(encryptedAppKey.(string))
 		if secretKey, err = Decrypt(encryptedMasterKey, clientKey); err == nil {
-			c.Config.Set(KEY_APP_KEY, BytesToBase64(secretKey))
+			if cfg := c.Config.Set(KEY_APP_KEY, BytesToBase64(secretKey)); len(cfg) < 1 {
+				klog.Error("failed to set the application key")
+			}
 			c.Config.Delete(KEY_CLIENT_KEY)
 		} else {
-			klog.Error("failed to decrypt APP_KEY")
+			klog.Error("failed to decrypt the application key")
 		}
 		if ownerPubKey, found := decryptedResponseDict[string(KEY_OWNER_PUBLIC_KEY)]; found && ownerPubKey != nil {
 			if appOwnerPublicKey := strings.TrimSpace(fmt.Sprintf("%v", ownerPubKey)); appOwnerPublicKey != "" {
-				c.Config.Set(KEY_OWNER_PUBLIC_KEY, appOwnerPublicKey)
+				if cfg := c.Config.Set(KEY_OWNER_PUBLIC_KEY, appOwnerPublicKey); len(cfg) < 1 {
+					klog.Error("failed to set the app owner public key - file uploads and creating new records may fail")
+				}
 			}
 		}
 	} else {
@@ -1043,13 +1087,13 @@ func (c *SecretsManager) fileUpload(url, parameters string, successStatusCode in
 	return nil
 }
 
-func (c *SecretsManager) DeleteSecrets(recrecordUids []string) (statuses map[string]string, err error) {
+func (c *SecretsManager) DeleteSecrets(recordUids []string) (statuses map[string]string, err error) {
 	statuses = map[string]string{}
-	if len(recrecordUids) == 0 {
+	if len(recordUids) == 0 {
 		return statuses, nil
 	}
 
-	payload, err := c.prepareDeletePayload(recrecordUids)
+	payload, err := c.prepareDeletePayload(recordUids)
 	if err != nil {
 		return statuses, err
 	}
@@ -1136,167 +1180,141 @@ func (c *SecretsManager) CreateSecretWithRecordData(recUid, folderUid string, re
 	return payload.RecordUid, err
 }
 
-type notationOptions struct {
-	url           string
-	uid           string
-	fieldDataType string
-	key           string
-	returnSingle  bool
-	index         int
-	dictKey       string
-}
-
-func (c *SecretsManager) parseNotation(notationUrl string) (nopts *notationOptions, err error) {
-	// ex. URL: <uid>/<field|custom_field|file>/<label|type>[INDEX][FIELD]
-	opts := notationOptions{url: notationUrl}
-	// If the URL starts with keeper:// we want to remove it.
-	if strings.HasPrefix(strings.ToLower(notationUrl), c.NotationPrefix()) {
-		errMisingPath := errors.New("keeper url missing information about the uid, field type, and field key")
-		if urlParts := strings.Split(notationUrl, "//"); len(urlParts) > 1 {
-			if notationUrl = urlParts[1]; notationUrl == "" {
-				return nil, errMisingPath
-			}
-		} else {
-			return nil, errMisingPath
-		}
-	}
-
-	if urlParts := strings.Split(notationUrl, "/"); len(urlParts) == 3 {
-		opts.uid = urlParts[0]
-		opts.fieldDataType = urlParts[1]
-		opts.key = urlParts[2]
-	} else {
-		return nil, fmt.Errorf("could not parse the notation '%s'. Is it valid? ", notationUrl)
-	}
-
-	if opts.uid == "" {
-		return nil, errors.New("record UID is missing in the keeper url")
-	}
-	if opts.fieldDataType == "" {
-		return nil, errors.New("field type is missing in the keeper url")
-	}
-	if opts.key == "" {
-		return nil, errors.New("field key is missing in the keeper url")
-	}
-
-	// By default, we want to return a single value, which is the first item in the array
-	opts.returnSingle = true
-	opts.index = 0
-	opts.dictKey = ""
-
-	// Check it see if the key has a predicate, possibly with an index.
-	rePredicate := regexp.MustCompile(`\[([^\]]*)\]`)
-	rePredicateValue := regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
-	if predicates := rePredicate.FindAllStringSubmatch(opts.key, 3); len(predicates) > 0 {
-		if len(predicates) > 2 {
-			return nil, errors.New("the predicate of the notation appears to be invalid. Too many [], max 2 allowed. ")
-		}
-		if firstPredicate := predicates[0]; len(firstPredicate) > 1 {
-			value := firstPredicate[1]
-			// If the first predicate is an index into an array - fileRef[2]
-			if i, err := strconv.ParseInt(value, 10, 64); err == nil {
-				opts.index = int(i)
-			} else if matched := rePredicateValue.MatchString(value); matched {
-				// the first predicate is a key to a dictionary - name[first]
-				opts.dictKey = value
-			} else {
-				// else it was an array indicator (.../name[] or .../name) - return all the values
-				opts.returnSingle = false
-			}
-		}
-		if len(predicates) > 1 {
-			if !opts.returnSingle {
-				return nil, errors.New("if the second [] is a dictionary key, the first [] needs to have any index. ")
-			}
-			if secondPredicate := predicates[1]; len(secondPredicate) > 1 {
-				if value := secondPredicate[1]; len(value) > 0 {
-					// If the second predicate is an index into an array - fileRef[2]
-					if _, err := strconv.ParseInt(value, 10, 64); err == nil {
-						return nil, errors.New("the second [] can only by a key for the dictionary. It cannot be an index. ")
-					} else if matched := rePredicateValue.MatchString(value); matched {
-						// the second predicate is a key to a dictionary - name[first]
-						opts.dictKey = value
-					} else {
-						// else it was an array indicator (.../name[] or .../name) - return all the values
-						return nil, errors.New("the second [] must have key for the dictionary. Cannot be blank. ")
-					}
-				}
-			}
-		}
-
-		// Remove the predicate from the key, if it exists
-		if pos := strings.Index(opts.key, "["); pos >= 0 {
-			opts.key = opts.key[:pos]
-		}
-	}
-
-	return &opts, nil
-}
-
-func (c *SecretsManager) extractNotation(records []*Record, nopts *notationOptions) (fieldValue []interface{}, err error) {
+// Legacy notation
+func (c *SecretsManager) extractNotation(records []*Record, parsedNotation []*NotationSection) (fieldValue []interface{}, err error) {
 	fieldValue = []interface{}{}
+
+	recordToken := "" // UID or Title
+	recordTokenIsValid := parsedNotation[1] != nil && parsedNotation[1].IsPresent && parsedNotation[1].Text != nil
+	if recordTokenIsValid {
+		recordToken = parsedNotation[1].Text.Text
+	} else {
+		return fieldValue, fmt.Errorf("invalid notation - missing record UID or Title")
+	}
 
 	matchingRecords := []*Record{}
 	for _, r := range records {
-		if r.Uid == nopts.uid {
+		if recordToken == r.Uid || recordToken == r.Title() {
 			matchingRecords = append(matchingRecords, r)
 		}
 	}
 
-	if len(matchingRecords) == 0 {
-		return fieldValue, errors.New("Could not find a record with the UID " + nopts.uid)
+	if len(matchingRecords) < 1 {
+		return fieldValue, fmt.Errorf("notation error - no records match record '%s'", recordToken)
 	}
 	if len(matchingRecords) > 1 {
-		klog.Warning("Found more that one record with the same UID. Notation will inspect only the first record!")
+		klog.Warning(fmt.Sprintf("notation warning - multiple records match record '%s'. Notation will inspect only the first record!", recordToken))
 	}
 
 	record := matchingRecords[0]
 
-	var iValue []interface{}
-	if nopts.fieldDataType == "field" {
-		field := record.getStandardField(nopts.key)
-		if len(field) == 0 {
-			return fieldValue, fmt.Errorf("cannot find standard field %s", nopts.key)
-		}
-		iValue, _ = field["value"].([]interface{})
-		// fieldType, _ = field["type"].(string)
-	} else if nopts.fieldDataType == "custom_field" {
-		// iValue = record.GetCustomFieldsByLabel(nopts.key) // by default custom[] searches are by label
-		field := record.getCustomField(nopts.key)
-		if len(field) == 0 {
-			return fieldValue, fmt.Errorf("cannot find custom field %s", nopts.key)
-		}
-		iValue, _ = field["value"].([]interface{})
-		// fieldType, _ = field["type"].(string)
-	} else if nopts.fieldDataType == "file" {
-		file := record.FindFileByTitle(nopts.key)
-		if file == nil {
-			return fieldValue, fmt.Errorf("cannot find the file %s in record %s. ", nopts.key, nopts.uid)
-		}
-		fieldValue = append(fieldValue, file.GetFileData())
-		return fieldValue, nil
-	} else {
-		return fieldValue, fmt.Errorf("field type of %s is not valid. ", nopts.fieldDataType)
+	selector := "" // type|title|notes or file|field|custom_field
+	if parsedNotation[2].IsPresent && parsedNotation[2].Text != nil {
+		selector = parsedNotation[2].Text.Text
+	}
+	if selector == "" {
+		return fieldValue, fmt.Errorf("invalid notation - missing selector (type|title|notes or file|field|custom_field)")
 	}
 
-	// Inflate the value if its part of list of types to inflate.
-	// This will request additional records	from secrets manager.
-	// if ftypes, found := inflateRefTypes[fieldType]; found {
-	// 	iValue := inflateFieldValue(iValue, ftypes)
-	// }
+	parameter := ""
+	index1 := ""
+	index2 := ""
+	if parsedNotation[2] != nil && parsedNotation[2].IsPresent {
+		if parsedNotation[2].Parameter != nil {
+			parameter = parsedNotation[2].Parameter.Text
+		}
+		if parsedNotation[2].Index1 != nil {
+			index1 = parsedNotation[2].Index1.Text
+		}
+		if parsedNotation[2].Index2 != nil {
+			index2 = parsedNotation[2].Index2.Text
+		}
+	}
+	// legacy compat mode
+	if parsedNotation[2].Index1 == nil && parsedNotation[2].Index2 == nil {
+		index1 = "0" // ex. UID/field/name -> name[0]
+	} else if index2 != "" && (parsedNotation[2].Index1 == nil || parsedNotation[2].Index1.RawText == "[]") {
+		index1 = "0" // ex. UID/field/name[fist] -> name[0][first]
+	}
 
-	if nopts.returnSingle {
+	var iValue []interface{}
+	switch strings.ToLower(selector) {
+	case "type":
+		return []interface{}{record.Type()}, nil
+	case "title":
+		return []interface{}{record.Title()}, nil
+	case "notes":
+		return []interface{}{record.Notes()}, nil
+	case "file":
+		if parameter == "" {
+			return fieldValue, fmt.Errorf("notation error - missing required parameter: filename or file UID for files in record '%s'", recordToken)
+		}
+		if len(record.Files) < 1 {
+			return fieldValue, fmt.Errorf("notation error - record '%s' has no file attachments", recordToken)
+		}
+
+		files := []*KeeperFile{}
+		for _, f := range record.Files {
+			if parameter == f.Name || parameter == f.Title || parameter == f.Uid {
+				files = append(files, f)
+			}
+		}
+		// file searches do not use indexes and rely on unique file names or fileUid
+		if len(files) > 1 {
+			klog.Warning(fmt.Sprintf("notation warning - record '%s' has multiple files matching the search criteria '%s'. Notation will return only the first file!", recordToken, parameter))
+		}
+		if len(files) < 1 {
+			return fieldValue, fmt.Errorf("notation error - record '%s' has no files matching the search criteria '%s'", recordToken, parameter)
+		}
+		contents := files[0].GetFileData()
+		fieldValue = append(fieldValue, contents)
+		return fieldValue, nil
+	case "field", "custom_field":
+		if parsedNotation[2].Parameter == nil {
+			return fieldValue, fmt.Errorf("notation error - missing required parameter for the field (type or label): ex. /field/type or /custom_field/MyLabel")
+		}
+		fieldSection := FieldSectionCustom
+		if strings.ToLower(selector) == "field" {
+			fieldSection = FieldSectionFields
+		}
+		flds := record.GetFieldsByMask(parameter, FieldTokenBoth, fieldSection)
+		if len(flds) > 1 {
+			klog.Warning(fmt.Sprintf("notation warning - record '%s' has multiple fields matching the search criteria '%s'. Notation will return only the first field!", recordToken, parameter))
+		}
+		if len(flds) < 1 {
+			return fieldValue, fmt.Errorf("notation error - record '%s' has no fields matching the search criteria '%s'", recordToken, parameter)
+		}
+		field := flds[0]
+		iValue, _ = field["value"].([]interface{})
+		// fieldType, _ = field["type"].(string)
+	default:
+		return fieldValue, fmt.Errorf("invalid notation - unexpected selector '%s'", selector)
+	}
+
+	idx, err := strconv.ParseInt(index1, 10, 32)
+	if err != nil || idx < 0 {
+		idx = -1 // full value
+	}
+	// valid only if [] or missing - ex. /field/phone or /field/phone[]
+	if idx == -1 &&
+		!(parsedNotation[2] == nil || parsedNotation[2].Index1 == nil ||
+			parsedNotation[2].Index1.RawText == "" ||
+			parsedNotation[2].Index1.RawText == "[]") {
+		return fieldValue, fmt.Errorf("notation error - Invalid field index '%d'", idx)
+	}
+
+	if idx >= 0 { // return single value (by index)
 		if len(iValue) == 0 {
 			return fieldValue, nil
 		}
-		if len(iValue) > nopts.index {
-			iVal := iValue[nopts.index]
+		if len(iValue) > int(idx) {
+			iVal := iValue[idx]
 			retMap, mapOk := iVal.(map[string]interface{})
-			if mapOk && strings.TrimSpace(nopts.dictKey) != "" {
-				if val, ok := retMap[nopts.dictKey]; ok {
+			if mapOk && strings.TrimSpace(index2) != "" {
+				if val, ok := retMap[index2]; ok {
 					fieldValue = append(fieldValue, val)
 				} else {
-					return fieldValue, fmt.Errorf("cannot find the dictionary key %s in the value ", nopts.dictKey)
+					return fieldValue, fmt.Errorf("cannot find the dictionary key %s in the value ", index2)
 				}
 			} else {
 				fieldValue = append(fieldValue, iVal)
@@ -1315,32 +1333,37 @@ func (c *SecretsManager) extractNotation(records []*Record, nopts *notationOptio
 				}
 			}
 		} else {
-			return fieldValue, fmt.Errorf("the value at index %d does not exist for %s. ", nopts.index, nopts.url)
+			return fieldValue, fmt.Errorf("notation error - Field index out of bounds %d >= %d for field %s", idx, len(iValue), parameter)
 		}
-	} else {
+	} else { // return full value
 		fieldValue = iValue
 	}
 
 	return fieldValue, nil
 }
 
-func (c *SecretsManager) FindNotation(records []*Record, url string) (fieldValue []interface{}, err error) {
-	nopts, err := c.parseNotation(url)
-	if err != nil {
-		return []interface{}{}, err
+func (c *SecretsManager) FindNotation(records []*Record, notation string) (fieldValue []interface{}, err error) {
+	parsedNotation, err := ParseNotation(notation) // prefix, record, selector, footer
+	if err != nil || len(parsedNotation) < 3 {
+		return []interface{}{}, fmt.Errorf("invalid notation '%s'", notation)
 	}
 
-	return c.extractNotation(records, nopts)
+	return c.extractNotation(records, parsedNotation)
 }
 
-func (c *SecretsManager) GetNotation(url string) (fieldValue []interface{}, err error) {
+// Deprecated: Use GetNotationResults instead.
+func (c *SecretsManager) GetNotation(notation string) (fieldValue []interface{}, err error) {
 	/*
 		Simple string notation to get a value
 
 		* A system of figures or symbols used in a specialized field to represent numbers, quantities, tones,
 			or values.
 
-		<uid>/<field|custom_field|file>/<label|type>[INDEX][FIELD]
+		<uid|title>/<type|title|notes>
+		<uid|title>/file/<filename|fileUID>
+		<uid|title>/<field|custom_field>/<type|label>[INDEX][PROPERTY]
+		Record title, field label, filename sections need to escape the delimiters /[]\ -> \/ \[ \] \\
+
 
 		Example:
 
@@ -1355,15 +1378,575 @@ func (c *SecretsManager) GetNotation(url string) (fieldValue []interface{}, err 
 			RECORD_UID/custom_field/phone[0]         => [{"number": "555-555...}]
 	*/
 
-	nopts, err := c.parseNotation(url)
-	if err != nil {
-		return []interface{}{}, err
+	result := []interface{}{}
+	parsedNotation, err := ParseNotationInLegacyMode(notation) // prefix, record, selector, footer
+	if err != nil || len(parsedNotation) < 3 {
+		return result, fmt.Errorf("invalid notation '%s'", notation)
 	}
 
-	records, err := c.GetSecrets([]string{nopts.uid})
-	if err != nil {
-		return []interface{}{}, err
+	recordToken := "" // UID or Title
+	recordTokenIsValid := parsedNotation[1] != nil && parsedNotation[1].IsPresent && parsedNotation[1].Text != nil
+	if recordTokenIsValid {
+		recordToken = parsedNotation[1].Text.Text
+	} else {
+		return result, fmt.Errorf("invalid notation '%s', missing record UID or Title", notation)
 	}
 
-	return c.extractNotation(records, nopts)
+	// to minimize traffic - if it looks like a Record UID try to pull a single record
+	records := []*Record{}
+	if matched, err := regexp.MatchString(`^[A-Za-z0-9_-]{22}$`, recordToken); err == nil && matched {
+		if secrets, err := c.GetSecrets([]string{recordToken}); err != nil {
+			return result, err
+		} else if len(secrets) > 1 {
+			return result, fmt.Errorf("notation error - found multiple records with same UID '%s'", recordToken)
+		} else {
+			records = secrets
+		}
+	}
+
+	// If RecordUID is not found - pull all records and search by title
+	if len(records) < 1 {
+		if secrets, err := c.GetSecrets([]string{}); err != nil {
+			return result, err
+		} else if len(secrets) > 0 {
+			for _, r := range secrets {
+				if recordToken == r.Title() {
+					records = append(records, r)
+				}
+			}
+		}
+	}
+
+	if len(records) > 1 {
+		return result, fmt.Errorf("notation error - multiple records match record '%s'", recordToken)
+	}
+	if len(records) < 1 {
+		return result, fmt.Errorf("notation error - no records match record '%s'", recordToken)
+	}
+
+	return c.extractNotation(records, parsedNotation)
+}
+
+// New notation parser/extractor allows to search by title/label and to escape special chars
+const EscapeChar = '\\'
+const EscapeChars = "/[]\\" // /[]\ -> \/ ,\[, \], \\
+// Escape the characters in plaintext sections only - title, label or filename
+
+type ParserTuple struct {
+	Text    string // unescaped text
+	RawText string // raw text incl. delimiter(s), escape characters etc.
+}
+type NotationSection struct {
+	Section   string       // section name - ex. prefix
+	IsPresent bool         // presence flag
+	StartPos  int          // section start position in URI
+	EndPos    int          // section end position in URI
+	Text      *ParserTuple // <unescaped, raw> text
+	Parameter *ParserTuple // <field type>|<field label>|<file name>
+	Index1    *ParserTuple // numeric index [N] or []
+	Index2    *ParserTuple // property index - ex. field/name[0][middle]
+}
+
+func NewNotationSection(section string) *NotationSection {
+	return &NotationSection{
+		Section:   section,
+		IsPresent: false,
+		StartPos:  -1,
+		EndPos:    -1,
+		Text:      nil,
+		Parameter: nil,
+		Index1:    nil,
+		Index2:    nil,
+	}
+}
+
+func ParseSubsection(text string, pos int, delimiters string, escaped bool) (*ParserTuple, error) {
+	// raw string excludes start delimiter (if '/') but includes end delimiter or both (if '[',']')
+	if text == "" || pos < 0 || pos >= len(text) {
+		return nil, nil
+	}
+	if delimiters == "" || len(delimiters) > 2 {
+		return nil, fmt.Errorf("notation parser: Internal error - Incorrect delimiters count. Delimiters: '%s'", delimiters)
+	}
+	token := ""
+	raw := ""
+	for pos < len(text) {
+		if escaped && EscapeChar == text[pos] {
+			// notation cannot end in single char incomplete escape sequence
+			// and only escape_chars should be escaped
+			if ((pos + 1) >= len(text)) || !strings.Contains(EscapeChars, text[pos+1:pos+2]) {
+				return nil, fmt.Errorf("notation parser: Incorrect escape sequence at position %d", pos)
+			}
+			// copy the properly escaped character
+			token += text[pos+1 : pos+2]
+			raw += text[pos : pos+2]
+			pos += 2
+		} else { // escaped == false || EscapeChar != text[pos]
+			raw += text[pos : pos+1] // delimiter is included in raw text
+			if len(delimiters) == 1 {
+				if text[pos] == delimiters[0] {
+					break
+				} else {
+					token += text[pos : pos+1]
+				}
+			} else { // 2 delimiters
+				if raw[0] != delimiters[0] {
+					return nil, errors.New("notation parser: Index sections must start with '['")
+				}
+				if len(raw) > 1 && text[pos] == delimiters[0] {
+					return nil, errors.New("notation parser: Index sections do not allow extra '[' inside")
+				}
+				if !strings.Contains(delimiters, text[pos:pos+1]) {
+					token += text[pos : pos+1]
+				} else if text[pos] == delimiters[1] {
+					break
+				}
+			}
+			pos++
+		}
+	}
+	// if pos >= len(text) {
+	// 	pos = len(text) - 1
+	// }
+	if len(delimiters) == 2 && ((len(raw) < 2 || raw[0] != delimiters[0] || raw[len(raw)-1] != delimiters[1]) ||
+		(escaped && raw[len(raw)-2] == EscapeChar)) {
+		return nil, errors.New("notation parser: Index sections must be enclosed in '[' and ']'")
+	}
+	return &ParserTuple{Text: token, RawText: raw}, nil
+}
+
+func ParseSection(notation string, section string, pos int) (*NotationSection, error) {
+	if notation == "" {
+		return nil, errors.New("keeper notation parsing error - missing notation URI")
+	}
+
+	sectionName := strings.ToLower(section)
+	sections := map[string]struct{}{"prefix": {}, "record": {}, "selector": {}, "footer": {}}
+	if _, found := sections[sectionName]; !found {
+		return nil, fmt.Errorf("keeper notation parsing error - unknown section: '%s'", sectionName)
+	}
+
+	result := NewNotationSection(section)
+	result.StartPos = pos
+
+	switch sectionName {
+	case "prefix":
+		// prefix "keeper://" is not mandatory
+		uriPrefix := "keeper://"
+		if strings.HasPrefix(strings.ToLower(notation), uriPrefix) {
+			result.IsPresent = true
+			result.StartPos = 0
+			result.EndPos = len(uriPrefix) - 1
+			result.Text = &ParserTuple{Text: notation[0:len(uriPrefix)], RawText: notation[0:len(uriPrefix)]}
+		}
+	case "footer":
+		// footer should not be present - used only for verification
+		result.IsPresent = (pos < len(notation))
+		if result.IsPresent {
+			result.StartPos = pos
+			result.EndPos = len(notation) - 1
+			result.Text = &ParserTuple{Text: notation[pos:], RawText: notation[pos:]}
+		}
+	case "record":
+		// record is always present - either UID or title
+		result.IsPresent = (pos < len(notation))
+		if result.IsPresent {
+			if parsed, _ := ParseSubsection(notation, pos, "/", true); parsed != nil {
+				result.StartPos = pos
+				result.EndPos = pos + len(parsed.RawText) - 1
+				result.Text = parsed
+			}
+		}
+	case "selector":
+		// selector is always present - type|title|notes | field|custom_field|file
+		result.IsPresent = (pos < len(notation))
+		if result.IsPresent {
+			if parsed, _ := ParseSubsection(notation, pos, "/", false); parsed != nil {
+				result.StartPos = pos
+				result.EndPos = pos + len(parsed.RawText) - 1
+				result.Text = parsed
+
+				// selector.parameter - <field type>|<field label> | <file name>
+				// field/name[0][middle], custom_field/my label[0][middle], file/my file[0]
+				longSelectors := map[string]struct{}{"field": {}, "custom_field": {}, "file": {}}
+				if _, found := longSelectors[strings.ToLower(parsed.Text)]; found {
+					// TODO: File metadata extraction: ex. filename[1][size] - that requires filename to be escaped
+					if parsed, _ = ParseSubsection(notation, result.EndPos+1, "[", true); parsed != nil {
+						result.Parameter = parsed // <field type>|<field label> | <filename>
+						plen := len(parsed.RawText)
+						if strings.HasSuffix(parsed.RawText, "[") && !strings.HasSuffix(parsed.RawText, "\\[") {
+							plen--
+						}
+						result.EndPos += plen
+						if parsed, _ = ParseSubsection(notation, result.EndPos+1, "[]", true); parsed != nil {
+							result.Index1 = parsed // selector.index1 [int] or []
+							result.EndPos += len(parsed.RawText)
+							if parsed, _ = ParseSubsection(notation, result.EndPos+1, "[]", true); parsed != nil {
+								result.Index2 = parsed // selector.index2 [str]
+								result.EndPos += len(parsed.RawText)
+							}
+						}
+					}
+				}
+			}
+		}
+	default:
+		return nil, fmt.Errorf("keeper notation parsing error - unknown section: %s", sectionName)
+	}
+	return result, nil
+}
+
+func ParseNotation(notation string) ([]*NotationSection, error) {
+	return parseNotationImpl(notation, false)
+}
+
+func ParseNotationInLegacyMode(notation string) ([]*NotationSection, error) {
+	return parseNotationImpl(notation, true)
+}
+
+func parseNotationImpl(notation string, legacyMode bool) ([]*NotationSection, error) {
+	if notation == "" {
+		return nil, errors.New("keeper notation is missing or invalid")
+	}
+
+	// Notation is either plaintext keeper URI format or URL safe base64 string (UTF8)
+	// auto detect format - '/' is not part of base64 URL safe alphabet
+	if strings.Contains(notation, "/") {
+		if decodedStr := Base64ToStringSafe(notation); len(decodedStr) > 0 {
+			notation = decodedStr
+		}
+	}
+
+	pos := 0
+	// prefix is optional
+	prefix, _ := ParseSection(notation, "prefix", 0) // keeper://
+	if prefix.IsPresent {
+		pos = prefix.EndPos + 1
+	}
+
+	// record is required
+	record, _ := ParseSection(notation, "record", pos) // <UID> or <Title>
+	if record.IsPresent {
+		pos = record.EndPos + 1
+	} else {
+		pos = len(notation)
+	}
+
+	// selector is required, indexes are optional
+	selector, _ := ParseSection(notation, "selector", pos) // type|title|notes | field|custom_field|file
+	if selector.IsPresent {
+		pos = selector.EndPos + 1
+	} else {
+		pos = len(notation)
+	}
+
+	footer, _ := ParseSection(notation, "footer", pos) // Any text after the last section
+
+	// verify parsed query
+	// prefix is optional, record UID/Title and selector are mandatory
+	shortSelectors := map[string]struct{}{"type": {}, "title": {}, "notes": {}}
+	fullSelectors := map[string]struct{}{"field": {}, "custom_field": {}, "file": {}}
+	selectors := map[string]struct{}{"type": {}, "title": {}, "notes": {}, "field": {}, "custom_field": {}, "file": {}}
+	if !record.IsPresent || !selector.IsPresent {
+		return nil, errors.New("keeper notation URI missing information about the uid, file, field type, or field key")
+	}
+	if footer.IsPresent {
+		return nil, errors.New("keeper notation is invalid - extra characters after last section")
+	}
+	selectorText := ""
+	if selector.IsPresent && selector.Text != nil {
+		selectorText = strings.ToLower(selector.Text.Text)
+	}
+	if _, found := selectors[selectorText]; !found {
+		return nil, errors.New("keeper notation is invalid - bad selector, must be one of (type, title, notes, field, custom_field, file)")
+	}
+	if _, found := shortSelectors[selectorText]; found && selector.Parameter != nil {
+		return nil, errors.New("keeper notation is invalid - selectors (type, title, notes) do not have parameters")
+	}
+	if _, found := fullSelectors[selectorText]; found {
+		if !selector.IsPresent || selector.Parameter == nil {
+			return nil, errors.New("keeper notation is invalid - selectors (field, custom_field, file) require parameters")
+		}
+		if selectorText == "file" && (selector.Index1 != nil || selector.Index2 != nil) {
+			return nil, errors.New("keeper notation is invalid - file selectors don't accept indexes")
+		}
+		if selectorText != "file" && selector.Index1 == nil && selector.Index2 != nil {
+			return nil, errors.New("keeper notation is invalid - two indexes required")
+		}
+		if selector.Index1 != nil {
+			if matched, err := regexp.MatchString(`^\[\d*\]$`, selector.Index1.RawText); err != nil || !matched {
+				if !legacyMode {
+					return nil, errors.New("keeper notation is invalid - first index must be numeric: [n] or []")
+				}
+				// in legacy mode convert /name[middle] to name[][middle]
+				if selector.Index2 == nil {
+					selector.Index2 = selector.Index1
+					selector.Index1 = &ParserTuple{Text: "", RawText: "[]"}
+				}
+			}
+		}
+	}
+
+	return []*NotationSection{prefix, record, selector, footer}, nil
+}
+
+// TryGetNotationResults returns a string list with all values specified by the notation or empty list on error.
+// It simply logs any errors and continue returning an empty string list on error.
+func (c *SecretsManager) TryGetNotationResults(notation string) []string {
+	if res, err := c.GetNotationResults(notation); err == nil {
+		return res
+	}
+	return []string{}
+}
+
+// Notation:
+// keeper://<uid|title>/<type|title|notes>
+// keeper://<uid|title>/file/<filename|fileUID>
+// keeper://<uid|title>/<field|custom_field>/<type|label>[INDEX][PROPERTY]
+// Record title, field label, filename sections need to escape the delimiters /[]\ -> \/ \[ \] \\
+// The prefix "keeper://" is optional
+//
+// GetNotationResults returns selection of the value(s) from a single field as a string list.
+// Multiple records or multiple fields found results in error.
+// Use record UID or unique record titles and field labels so that notation finds a single record/field.
+//
+// If field has multiple values use indexes - numeric INDEX specifies the position in the value list
+// and PROPERTY specifies a single JSON object property to extract (see examples below for usage)
+// If no indexes are provided - whole value list is returned (same as [])
+// If PROPERTY is provided then INDEX must be provided too - even if it's empty [] which means all
+//
+// Extracting two or more but not all field values simultaneously is not supported - use multiple notation requests.
+//
+// Files are returned as URL safe base64 encoded string of the binary content
+//
+// Note: Integrations and plugins usually return single string value - result[0] or ""
+//
+// Examples:
+//  RECORD_UID/file/filename.ext             => ["URL Safe Base64 encoded binary content"]
+//  RECORD_UID/field/url                     => ["127.0.0.1", "127.0.0.2"] or [] if empty
+//  RECORD_UID/field/url[]                   => ["127.0.0.1", "127.0.0.2"] or [] if empty
+//  RECORD_UID/field/url[0]                  => ["127.0.0.1"] or error if empty
+//  RECORD_UID/custom_field/name[first]      => Error, numeric index is required to access field property
+//  RECORD_UID/custom_field/name[][last]     => ["Smith", "Johnson"]
+//  RECORD_UID/custom_field/name[0][last]    => ["Smith"]
+//  RECORD_UID/custom_field/phone[0][number] => "555-5555555"
+//  RECORD_UID/custom_field/phone[1][number] => "777-7777777"
+//  RECORD_UID/custom_field/phone[]          => ["{\"number\": \"555-555...\"}", "{\"number\": \"777...\"}"]
+//  RECORD_UID/custom_field/phone[0]         => ["{\"number\": \"555-555...\"}"]
+
+// GetNotationResults returns a string list with all values specified by the notation or throws an error.
+// Use TryGetNotationResults to just log errors and continue returning an empty string list on error.
+func (c *SecretsManager) GetNotationResults(notation string) ([]string, error) {
+	result := []string{}
+
+	parsedNotation, err := ParseNotation(notation) // prefix, record, selector, footer
+	if err != nil || len(parsedNotation) < 3 {
+		return nil, fmt.Errorf("invalid notation '%s'", notation)
+	}
+
+	selector := "" // type|title|notes or file|field|custom_field
+	if parsedNotation[2].IsPresent && parsedNotation[2].Text != nil {
+		selector = parsedNotation[2].Text.Text
+	}
+	if selector == "" {
+		return nil, fmt.Errorf("invalid notation '%s'", notation)
+	}
+
+	recordToken := "" // UID or Title
+	recordTokenIsValid := parsedNotation[1] != nil && parsedNotation[1].IsPresent && parsedNotation[1].Text != nil
+	if recordTokenIsValid {
+		recordToken = parsedNotation[1].Text.Text
+	} else {
+		return nil, fmt.Errorf("invalid notation '%s'", notation)
+	}
+
+	// to minimize traffic - if it looks like a Record UID try to pull a single record
+	records := []*Record{}
+	if matched, err := regexp.MatchString(`^[A-Za-z0-9_-]{22}$`, recordToken); err == nil && matched {
+		if secrets, err := c.GetSecrets([]string{recordToken}); err != nil {
+			return nil, err
+		} else if len(secrets) > 1 {
+			return nil, fmt.Errorf("notation error - found multiple records with same UID '%s'", recordToken)
+		} else {
+			records = secrets
+		}
+	}
+
+	// If RecordUID is not found - pull all records and search by title
+	if len(records) < 1 {
+		if secrets, err := c.GetSecrets([]string{}); err != nil {
+			return nil, err
+		} else if len(secrets) > 0 {
+			for _, r := range secrets {
+				if recordToken == r.Title() {
+					records = append(records, r)
+				}
+			}
+		}
+	}
+
+	if len(records) > 1 {
+		return nil, fmt.Errorf("notation error - multiple records match record '%s'", recordToken)
+	}
+	if len(records) < 1 {
+		return nil, fmt.Errorf("notation error - no records match record '%s'", recordToken)
+	}
+
+	record := records[0]
+	parameter := ""
+	index1 := ""
+	index2 := ""
+	if parsedNotation[2] != nil && parsedNotation[2].IsPresent {
+		if parsedNotation[2].Parameter != nil {
+			parameter = parsedNotation[2].Parameter.Text
+		}
+		if parsedNotation[2].Index1 != nil {
+			index1 = parsedNotation[2].Index1.Text
+		}
+		if parsedNotation[2].Index2 != nil {
+			index2 = parsedNotation[2].Index2.Text
+		}
+	}
+
+	switch strings.ToLower(selector) {
+	case "type":
+		result = append(result, record.Type())
+	case "title":
+		result = append(result, record.Title())
+	case "notes":
+		result = append(result, record.Notes())
+	case "file":
+		if parameter == "" {
+			return nil, fmt.Errorf("notation error - missing required parameter: filename or file UID for files in record '%s'", recordToken)
+		}
+		if len(record.Files) < 1 {
+			return nil, fmt.Errorf("notation error - record '%s' has no file attachments", recordToken)
+		}
+
+		files := []*KeeperFile{}
+		for _, f := range record.Files {
+			if parameter == f.Name || parameter == f.Title || parameter == f.Uid {
+				files = append(files, f)
+			}
+		}
+		// file searches do not use indexes and rely on unique file names or fileUid
+		if len(files) > 1 {
+			return nil, fmt.Errorf("notation error - record '%s' has multiple files matching the search criteria '%s'", recordToken, parameter)
+		}
+		if len(files) < 1 {
+			return nil, fmt.Errorf("notation error - record '%s' has no files matching the search criteria '%s'", recordToken, parameter)
+		}
+		contents := files[0].GetFileData()
+		text := BytesToUrlSafeStr(contents)
+		result = append(result, text)
+	case "field", "custom_field":
+		if parsedNotation[2].Parameter == nil {
+			return nil, fmt.Errorf("notation error - missing required parameter for the field (type or label): ex. /field/type or /custom_field/MyLabel")
+		}
+		fieldSection := FieldSectionCustom
+		if strings.ToLower(selector) == "field" {
+			fieldSection = FieldSectionFields
+		}
+		flds := record.GetFieldsByMask(parameter, FieldTokenBoth, fieldSection)
+		if len(flds) > 1 {
+			return nil, fmt.Errorf("notation error - record '%s' has multiple fields matching the search criteria '%s'", recordToken, parameter)
+		}
+		if len(flds) < 1 {
+			return nil, fmt.Errorf("notation error - record '%s' has no fields matching the search criteria '%s'", recordToken, parameter)
+		}
+
+		field := flds[0]
+		idx, err := strconv.ParseInt(index1, 10, 32)
+		if err != nil || idx < 0 {
+			idx = -1 // full value
+		}
+		// valid only if [] or missing - ex. /field/phone or /field/phone[]
+		if idx == -1 &&
+			!(parsedNotation[2] == nil || parsedNotation[2].Index1 == nil ||
+				parsedNotation[2].Index1.RawText == "" ||
+				parsedNotation[2].Index1.RawText == "[]") {
+			return nil, fmt.Errorf("notation error - Invalid field index '%d'", idx)
+		}
+		values := getRawFieldValue(field)
+		if values == nil {
+			values = []interface{}{}
+		}
+		if idx >= int64(len(values)) {
+			return nil, fmt.Errorf("notation error - Field index out of bounds %d >= %d for field %s", idx, len(values), parameter)
+		}
+		if idx >= 0 { // single index
+			values = values[idx : idx+1]
+		}
+
+		fullObjValue := parsedNotation[2] == nil || parsedNotation[2].Index2 == nil ||
+			parsedNotation[2].Index2.RawText == "" || parsedNotation[2].Index2.RawText == "[]"
+		objPropertyName := index2
+
+		res := []string{}
+		for _, fldValue := range values {
+			// Do not throw here to allow for ex. field/name[][middle] to pull [middle] only where present
+			// NB! Not all properties of a value are always required even when the field is marked as required
+			// ex. On a required `name` field only "first" and "last" properties are required but not "middle"
+			// so missing property in a field value is not always an error
+			if fldValue == nil {
+				klog.Error("notation error - Empty field value for field " + parameter) // throw?
+			}
+
+			if fullObjValue {
+				val := ""
+				if strValue, ok := fldValue.(string); ok {
+					val = strValue
+				} else {
+					if jsonStr, err := json.Marshal(fldValue); err == nil {
+						val = string(jsonStr)
+					} else {
+						klog.Error(fmt.Sprintf("notation error - Error converting field value to JSON %v", fldValue))
+					}
+				}
+				res = append(res, val)
+			} else if fldValue != nil {
+				if objMap, ok := fldValue.(map[string]interface{}); ok {
+					if jvalue, found := objMap[objPropertyName]; found {
+						val := ""
+						if strValue, ok := jvalue.(string); ok {
+							val = strValue
+						} else {
+							if jsonStr, err := json.Marshal(jvalue); err == nil {
+								val = string(jsonStr)
+							} else {
+								klog.Error(fmt.Sprintf("notation error - Error converting field value to JSON %v", jvalue))
+							}
+						}
+						res = append(res, val)
+					} else {
+						klog.Error(fmt.Sprintf("notation error - value object has no property '%s'", objPropertyName)) // skip
+					}
+				}
+			} else {
+				klog.Error(fmt.Sprintf("notation error - Cannot extract property '%s' from null value", objPropertyName))
+			}
+		}
+		if len(res) != len(values) {
+			klog.Error(fmt.Sprintf("notation warning - extracted %d out of %d values for '%s' property", len(res), len(values), objPropertyName))
+		}
+		if len(res) > 0 {
+			result = append(result, res...)
+		}
+	default:
+		return nil, fmt.Errorf("invalid notation '%s'", notation)
+	}
+
+	return result, nil
+}
+
+// getRawFieldValue returns the field's value[] slice
+// or nil if "value" key is not in the map or not an array
+func getRawFieldValue(field map[string]interface{}) []interface{} {
+	if v, found := field["value"]; found {
+		if value, ok := v.([]interface{}); ok {
+			return value
+		}
+	}
+
+	return nil
 }

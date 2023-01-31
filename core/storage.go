@@ -209,7 +209,7 @@ func NewMemoryKeyValueStorage(config ...interface{}) *memoryKeyValueStorage {
 		case map[string]string:
 			sConfig = t
 		default:
-			klog.Panicln("Unknown argument type - Config")
+			klog.Error(fmt.Sprintf("skipping unsupported config type '%v'", t))
 		}
 	}
 	if len(iConfig) > 0 {
@@ -218,7 +218,7 @@ func NewMemoryKeyValueStorage(config ...interface{}) *memoryKeyValueStorage {
 			case string:
 				sConfig[key] = value
 			default:
-				klog.Panicln("Unknown argument in Config")
+				klog.Error(fmt.Sprintf("skipping Config['%s'] - unsupported value type '%v'", key, value))
 			}
 		}
 	}
@@ -228,7 +228,7 @@ func NewMemoryKeyValueStorage(config ...interface{}) *memoryKeyValueStorage {
 		if k := GetConfigKey(key); k != "" {
 			newConfig[k] = value
 		} else {
-			klog.Error("skiping unknown config key value: " + key)
+			klog.Error("skipping unknown config key value: " + key)
 		}
 	}
 
@@ -261,10 +261,11 @@ func (m *memoryKeyValueStorage) Set(key ConfigKey, value interface{}) map[string
 	switch v := value.(type) {
 	case string:
 		m.Config[key] = v
+		return m.ReadStorage()
 	default:
-		klog.Panicln("Unknown value for ConfigKey: " + string(key) + ", Value: " + fmt.Sprintf("%v", v))
+		klog.Error(fmt.Sprintf("Unknown value for ConfigKey: %s, Value: %v", string(key), v))
 	}
-	return map[string]interface{}{}
+	return nil
 }
 
 func (m *memoryKeyValueStorage) Delete(key ConfigKey) map[string]interface{} {
@@ -274,12 +275,12 @@ func (m *memoryKeyValueStorage) Delete(key ConfigKey) map[string]interface{} {
 	} else {
 		klog.Warning(fmt.Sprintf("No key '%s' was found in config", string(key)))
 	}
-	return map[string]interface{}{}
+	return m.ReadStorage()
 }
 
 func (m *memoryKeyValueStorage) DeleteAll() map[string]interface{} {
 	m.Config = map[ConfigKey]string{}
-	return map[string]interface{}{}
+	return m.ReadStorage()
 }
 
 func (m *memoryKeyValueStorage) Contains(key ConfigKey) bool {
