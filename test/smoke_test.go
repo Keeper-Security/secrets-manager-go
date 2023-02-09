@@ -162,8 +162,10 @@ func TestTheWorks(t *testing.T) {
 }
 
 func TestVerifySslCerts(t *testing.T) {
-	config := ksm.NewMemoryKeyValueStorage()
-	config.Set(ksm.KEY_CLIENT_KEY, "ABC123")
+	mockConfig := MockConfig{}.MakeConfig([]string{"clientKey"}, "EU:1234", "", "")
+	base64ConfigStr := MockConfig{}.MakeBase64(mockConfig)
+
+	config := ksm.NewMemoryKeyValueStorage(base64ConfigStr)
 
 	os.Setenv("KSM_SKIP_VERIFY", "")
 	if sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}); !sm.VerifySslCerts {

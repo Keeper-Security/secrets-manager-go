@@ -37,7 +37,7 @@ func TestOurException(t *testing.T) {
 
 	MockResponseQueue.AddMockResponse(NewMockResponse([]byte(errorJson), 403, nil))
 
-	if _, err := sm.GetSecrets(nil); err != nil && err.Error() == "Error: access_denied, message=Signature is invalid" {
+	if _, err := sm.GetSecrets(nil); err != nil && err.Error() == "POST Error: Error: access_denied, message=Signature is invalid" {
 		t.Log("Received expected error code 403 'Signature is invalid'")
 	} else {
 		t.Error("did not get correct error message")
