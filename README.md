@@ -150,6 +150,14 @@ secretsManager.Save(secretToUpdate)
 
 # Change Log
 
+## 1.5.0
+
+* KSM-317 - Notation improvements
+* KSM-356 - Create custom fields
+* KSM-365 - Fixed KEY_CLINET_KEY is missing error
+* KSM-366 - Avoid exceptions/panics and return errors instead
+* KSM-367 - Fixed license not shown on pkg.go.dev
+
 ## 1.4.0
 
 * KSM-288 - Record removal
