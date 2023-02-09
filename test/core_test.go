@@ -26,5 +26,7 @@ func TestPrepareContext(t *testing.T) {
 		if len(context.ClientId) < 1 {
 			t.Error("did not find a client id")
 		}
+	} else {
+		t.Error("failed to prepare the context")
 	}
 }
