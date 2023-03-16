@@ -1405,7 +1405,11 @@ func convertToKeeperRecordField(fieldData interface{}, validate bool) (interface
 	if fieldData == nil {
 		return nil, errors.New("cannot convert empty field data")
 	}
-	fieldTypes := "|login|password|url|fileRef|oneTimeCode|name|birthDate|date|expirationDate|text|securityQuestion|multiline|email|cardRef|addressRef|pinCode|phone|secret|note|accountNumber|paymentCard|bankAccount|keyPair|host|address|licenseNumber|"
+	fieldTypes := "|login|password|url|fileRef|oneTimeCode|name" +
+		"|birthDate|date|expirationDate|text|securityQuestion|multiline|email|cardRef" +
+		"|addressRef|pinCode|phone|secret|note|accountNumber|paymentCard|bankAccount" +
+		"|keyPair|host|address|licenseNumber|recordRef|schedule|directoryType|databaseType" +
+		"|pamHostname|pamResources|checkbox|"
 	if fMap, ok := fieldData.(map[string]interface{}); ok {
 		if fType, found := fMap["type"]; found {
 			if sType, ok := fType.(string); ok && strings.Contains(fieldTypes, "|"+sType+"|") {
