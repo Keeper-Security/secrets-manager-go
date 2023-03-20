@@ -1351,7 +1351,6 @@ func (c *SecretsManager) FindNotation(records []*Record, notation string) (field
 	return c.extractNotation(records, parsedNotation)
 }
 
-// Deprecated: Use GetNotationResults instead.
 func (c *SecretsManager) GetNotation(notation string) (fieldValue []interface{}, err error) {
 	/*
 		Simple string notation to get a value
