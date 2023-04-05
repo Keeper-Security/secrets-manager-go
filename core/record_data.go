@@ -468,6 +468,118 @@ func NewLicenseNumber(value string) *LicenseNumber {
 	}
 }
 
+type RecordRef struct {
+	KeeperRecordField
+	Required bool     `json:"required,omitempty"`
+	Value    []string `json:"value,omitempty"`
+}
+
+// RecordRef field constructor with the single value to eliminate the complexity of the passing List as a value
+func NewRecordRef(value string) *RecordRef {
+	return &RecordRef{
+		KeeperRecordField: KeeperRecordField{Type: "recordRef"},
+		Value:             []string{value},
+	}
+}
+
+type Schedule struct {
+	Type          string `json:"type,omitempty"`
+	UtcTime       string `json:"utcTime,omitempty"`
+	Weekday       string `json:"weekday,omitempty"`
+	IntervalCount int    `json:"intervalCount,omitempty"`
+}
+
+type Schedules struct {
+	KeeperRecordField
+	Required bool       `json:"required,omitempty"`
+	Value    []Schedule `json:"value,omitempty"`
+}
+
+// Schedules field constructor with the single value to eliminate the complexity of the passing List as a value
+func NewSchedules(value Schedule) *Schedules {
+	return &Schedules{
+		KeeperRecordField: KeeperRecordField{Type: "schedule"},
+		Value:             []Schedule{value},
+	}
+}
+
+type DirectoryType struct {
+	KeeperRecordField
+	Required bool     `json:"required,omitempty"`
+	Value    []string `json:"value,omitempty"`
+}
+
+// DirectoryType field constructor with the single value to eliminate the complexity of the passing List as a value
+func NewDirectoryType(value string) *DirectoryType {
+	return &DirectoryType{
+		KeeperRecordField: KeeperRecordField{Type: "directoryType"},
+		Value:             []string{value},
+	}
+}
+
+type DatabaseType struct {
+	KeeperRecordField
+	Required bool     `json:"required,omitempty"`
+	Value    []string `json:"value,omitempty"`
+}
+
+// DatabaseType field constructor with the single value to eliminate the complexity of the passing List as a value
+func NewDatabaseType(value string) *DatabaseType {
+	return &DatabaseType{
+		KeeperRecordField: KeeperRecordField{Type: "databaseType"},
+		Value:             []string{value},
+	}
+}
+
+type PamHostname struct {
+	KeeperRecordField
+	Required      bool   `json:"required,omitempty"`
+	PrivacyScreen bool   `json:"privacyScreen,omitempty"`
+	Value         []Host `json:"value,omitempty"`
+}
+
+// PamHostname field constructor with the single value to eliminate the complexity of the passing List as a value
+func NewPamHostname(value Host) *PamHostname {
+	return &PamHostname{
+		KeeperRecordField: KeeperRecordField{Type: "pamHostname"},
+		Value:             []Host{value},
+	}
+}
+
+type PamResource struct {
+	ControllerUid string   `json:"controllerUid,omitempty"`
+	FolderUid     string   `json:"folderUid,omitempty"`
+	ResourceRef   []string `json:"resourceRef,omitempty"`
+}
+
+type PamResources struct {
+	KeeperRecordField
+	Required bool          `json:"required,omitempty"`
+	Value    []PamResource `json:"value,omitempty"`
+}
+
+// PamResources field constructor with the single value to eliminate the complexity of the passing List as a value
+func NewPamResources(value PamResource) *PamResources {
+	return &PamResources{
+		KeeperRecordField: KeeperRecordField{Type: "pamResources"},
+		Value:             []PamResource{value},
+	}
+}
+
+type Checkbox struct {
+	KeeperRecordField
+	Required bool   `json:"required,omitempty"`
+	Value    []bool `json:"value,omitempty"`
+}
+
+// Checkbox field constructor with the single value to eliminate the complexity of the passing List as a value
+func NewCheckbox(value bool) *Checkbox {
+	return &Checkbox{
+		KeeperRecordField: KeeperRecordField{Type: "checkbox"},
+		Value:             []bool{value},
+	}
+}
+
 // getKeeperRecordField converts fieldData from generic interface{} to strongly typed interface{}
 func getKeeperRecordField(fieldType string, fieldData map[string]interface{}, validate bool) (field interface{}, err error) {
 	if jsonField := DictToJson(fieldData); strings.TrimSpace(jsonField) != "" {
@@ -524,6 +636,20 @@ func getKeeperRecordField(fieldType string, fieldData map[string]interface{}, va
 			field = &Addresses{}
 		case "licenseNumber":
 			field = &LicenseNumber{}
+		case "recordRef":
+			field = &RecordRef{}
+		case "schedule":
+			field = &Schedules{}
+		case "directoryType":
+			field = &DirectoryType{}
+		case "databaseType":
+			field = &DatabaseType{}
+		case "pamHostname":
+			field = &PamHostname{}
+		case "pamResources":
+			field = &PamResources{}
+		case "checkbox":
+			field = &Checkbox{}
 		default:
 			return nil, fmt.Errorf("unable to convert unknown field type %v", fieldType)
 		}
@@ -550,7 +676,10 @@ func IsFieldClass(field interface{}) bool {
 		BankAccounts, *BankAccounts,
 		BirthDate, *BirthDate,
 		CardRef, *CardRef,
+		Checkbox, *Checkbox,
+		DatabaseType, *DatabaseType,
 		Date, *Date,
+		DirectoryType, *DirectoryType,
 		Email, *Email,
 		ExpirationDate, *ExpirationDate,
 		FileRef, *FileRef,
@@ -562,9 +691,13 @@ func IsFieldClass(field interface{}) bool {
 		Names, *Names,
 		OneTimeCode, *OneTimeCode,
 		Password, *Password,
+		PamHostname, *PamHostname,
+		PamResources, *PamResources,
 		PaymentCards, *PaymentCards,
 		Phones, *Phones,
 		PinCode, *PinCode,
+		RecordRef, *RecordRef,
+		Schedules, *Schedules,
 		Secret, *Secret,
 		SecureNote, *SecureNote,
 		SecurityQuestions, *SecurityQuestions,
