@@ -346,6 +346,10 @@ func (c *SecretsManager) encryptAndSignPayload(transmissionKey *TransmissionKey,
 		if payloadJsonStr, err = v.DeletePayloadToJson(); err != nil {
 			return nil, errors.New("error converting delete payload to JSON: " + err.Error())
 		}
+	case *CompleteTransactionPayload:
+		if payloadJsonStr, err = v.CompleteTransactionPayloadToJson(); err != nil {
+			return nil, errors.New("error converting complete transaction payload to JSON: " + err.Error())
+		}
 	case *FileUploadPayload:
 		if payloadJsonStr, err = v.FileUploadPayloadToJson(); err != nil {
 			return nil, errors.New("error converting file upload payload to JSON: " + err.Error())
@@ -406,7 +410,7 @@ func (c *SecretsManager) prepareGetPayload(recordsFilter []string) (res *GetPayl
 	return &payload, nil
 }
 
-func (c *SecretsManager) prepareUpdatePayload(record *Record) (res *UpdatePayload, err error) {
+func (c *SecretsManager) prepareUpdatePayload(record *Record, transactionType UpdateTransactionType) (res *UpdatePayload, err error) {
 	payload := UpdatePayload{
 		ClientVersion: keeperSecretsManagerClientId,
 		ClientId:      c.Config.Get(KEY_CLIENT_ID),
@@ -421,6 +425,28 @@ func (c *SecretsManager) prepareUpdatePayload(record *Record) (res *UpdatePayloa
 		payload.Data = BytesToUrlSafeStr(encryptedRawJsonBytes)
 	} else {
 		return nil, err
+	}
+
+	if transactionType != TransactionTypeNone {
+		payload.TransactionType = transactionType
+	}
+
+	return &payload, nil
+}
+
+func (c *SecretsManager) prepareCompleteTransactionPayload(recordUid string) (res *CompleteTransactionPayload, err error) {
+	payload := CompleteTransactionPayload{
+		ClientVersion: keeperSecretsManagerClientId,
+		ClientId:      c.Config.Get(KEY_CLIENT_ID),
+		RecordUid:     recordUid,
+	}
+
+	if payload.ClientId == "" {
+		return nil, errors.New("client ID is missing from the configuration")
+	}
+
+	if payload.RecordUid == "" {
+		return nil, errors.New("record UID is missing from CompleteTransactionPayload")
 	}
 
 	return &payload, nil
@@ -963,18 +989,42 @@ func FindSecretsByTitle(recordTitle string, records []*Record) []*Record {
 }
 
 func (c *SecretsManager) Save(record *Record) (err error) {
+	return c.updateSecret(record, TransactionTypeNone)
+}
+
+// SaveBeginTransaction requires corresponding call to CompleteTransaction to either commit or rollback
+func (c *SecretsManager) SaveBeginTransaction(record *Record, transactionType UpdateTransactionType) (err error) {
+	return c.updateSecret(record, transactionType)
+}
+
+func (c *SecretsManager) updateSecret(record *Record, transactionType UpdateTransactionType) (err error) {
 	// Save updated secret values
 	if record == nil {
-		return errors.New("Save - missing record data")
+		return errors.New("update secret - missing record data")
 	}
 
 	klog.Info("Updating record uid: " + record.Uid)
-	payload, err := c.prepareUpdatePayload(record)
+	payload, err := c.prepareUpdatePayload(record, transactionType)
 	if err != nil {
 		return err
 	}
 
 	_, err = c.PostQuery("update_secret", payload)
+	return err
+}
+
+func (c *SecretsManager) CompleteTransaction(recordUid string, rollback bool) (err error) {
+	payload, err := c.prepareCompleteTransactionPayload(recordUid)
+	if err != nil {
+		return err
+	}
+
+	route := "finalize_secret_update"
+	if rollback {
+		route = "rollback_secret_update"
+	}
+
+	_, err = c.PostQuery(route, payload)
 	return err
 }
 
@@ -1351,7 +1401,6 @@ func (c *SecretsManager) FindNotation(records []*Record, notation string) (field
 	return c.extractNotation(records, parsedNotation)
 }
 
-// Deprecated: Use GetNotationResults instead.
 func (c *SecretsManager) GetNotation(notation string) (fieldValue []interface{}, err error) {
 	/*
 		Simple string notation to get a value
