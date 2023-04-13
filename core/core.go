@@ -40,6 +40,12 @@ type ClientOptions struct {
 
 	// Deprecated: Use Token instead. If both are set, hostname from the token takes priority.
 	Hostname string
+
+	// PreferCache controls network access.
+	// When `true` and core.SecretsManager client cache is not empty GetSecrets will return cached data.
+	// Note: Only GetSecrets responses are cached.
+	// Note: Cache updates are manual so after update/delete do GetSecrets with new empty cache to cache the new values.
+	PreferCache bool
 }
 
 type SecretsManager struct {
@@ -49,6 +55,7 @@ type SecretsManager struct {
 	Config         IKeyValueStorage
 	context        **Context
 	cache          ICache
+	PreferCache    bool
 }
 
 // NewSecretsManager returns new *SecretsManager initialized with the options provided.
@@ -57,6 +64,10 @@ func NewSecretsManager(options *ClientOptions, arg ...interface{}) *SecretsManag
 	// set default values
 	sm := &SecretsManager{
 		VerifySslCerts: true,
+	}
+
+	if options != nil && options.PreferCache {
+		sm.PreferCache = true
 	}
 
 	// context used in tests only
@@ -165,8 +176,10 @@ func (c *SecretsManager) DefaultKeeperServerPublicKeyId() string {
 	return defaultKeeperServerPublicKeyId
 }
 
-func (c *SecretsManager) SetCache(cache ICache) {
+func (c *SecretsManager) SetCache(cache ICache) ICache {
+	res := c.cache
 	c.cache = cache
+	return res
 }
 
 func (c *SecretsManager) init() error {
@@ -614,6 +627,16 @@ func (c *SecretsManager) PostQuery(path string, payload interface{}) (body []byt
 		encryptedPayloadAndSignature, err := c.encryptAndSignPayload(transmissionKey, payload)
 		if err != nil {
 			return nil, errors.New("error encrypting payload: " + err.Error())
+		}
+
+		if c.PreferCache && c.cache != nil && path == "get_secret" {
+			if cachedData, cerr := c.cache.GetCachedValue(); cerr == nil && len(cachedData) >= Aes256KeySize {
+				transmissionKey.Key = cachedData[:Aes256KeySize]
+				data := cachedData[Aes256KeySize:]
+				ksmRs = NewKsmHttpResponse(200, data, nil)
+				break
+			}
+			// else cache was empty or invalid - fallthrough to populate
 		}
 
 		ksmRs, err = c.PostFunction(url, transmissionKey, encryptedPayloadAndSignature, c.VerifySslCerts)
