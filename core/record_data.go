@@ -580,6 +580,30 @@ func NewCheckbox(value bool) *Checkbox {
 	}
 }
 
+type Passkey struct {
+	PrivateKey   string `json:"privateKey,omitempty"`
+	CredentialId string `json:"credentialId,omitempty"`
+	SignCount    int64  `json:"signCount,omitempty"`
+	UserId       string `json:"userId,omitempty"`
+	RelyingParty string `json:"relyingParty,omitempty"`
+	Username     string `json:"username,omitempty"`
+	CreatedDate  int64  `json:"createdDate,omitempty"`
+}
+
+type Passkeys struct {
+	KeeperRecordField
+	Required bool      `json:"required,omitempty"`
+	Value    []Passkey `json:"value,omitempty"`
+}
+
+// Passkeys field constructor with the single value to eliminate the complexity of the passing List as a value
+func NewPasskeys(value Passkey) *Passkeys {
+	return &Passkeys{
+		KeeperRecordField: KeeperRecordField{Type: "passkey"},
+		Value:             []Passkey{value},
+	}
+}
+
 // getKeeperRecordField converts fieldData from generic interface{} to strongly typed interface{}
 func getKeeperRecordField(fieldType string, fieldData map[string]interface{}, validate bool) (field interface{}, err error) {
 	if jsonField := DictToJson(fieldData); strings.TrimSpace(jsonField) != "" {
@@ -650,6 +674,8 @@ func getKeeperRecordField(fieldType string, fieldData map[string]interface{}, va
 			field = &PamResources{}
 		case "checkbox":
 			field = &Checkbox{}
+		case "passkey":
+			field = &Passkeys{}
 		default:
 			return nil, fmt.Errorf("unable to convert unknown field type %v", fieldType)
 		}
@@ -702,7 +728,8 @@ func IsFieldClass(field interface{}) bool {
 		SecureNote, *SecureNote,
 		SecurityQuestions, *SecurityQuestions,
 		Text, *Text,
-		Url, *Url:
+		Url, *Url,
+		Passkeys, *Passkeys:
 		return true
 	}
 	return false
