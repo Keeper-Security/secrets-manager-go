@@ -580,6 +580,27 @@ func NewCheckbox(value bool) *Checkbox {
 	}
 }
 
+type Script struct {
+	FileRef   string   `json:"fileRef,omitempty"`
+	Command   string   `json:"command,omitempty"`
+	RecordRef []string `json:"recordRef,omitempty"`
+}
+
+type Scripts struct {
+	KeeperRecordField
+	Required      bool     `json:"required,omitempty"`
+	PrivacyScreen bool     `json:"privacyScreen,omitempty"`
+	Value         []Script `json:"value,omitempty"`
+}
+
+// Scripts field constructor with the single value to eliminate the complexity of the passing List as a value
+func NewScripts(value Script) *Scripts {
+	return &Scripts{
+		KeeperRecordField: KeeperRecordField{Type: "script"},
+		Value:             []Script{value},
+	}
+}
+
 // getKeeperRecordField converts fieldData from generic interface{} to strongly typed interface{}
 func getKeeperRecordField(fieldType string, fieldData map[string]interface{}, validate bool) (field interface{}, err error) {
 	if jsonField := DictToJson(fieldData); strings.TrimSpace(jsonField) != "" {
@@ -650,6 +671,8 @@ func getKeeperRecordField(fieldType string, fieldData map[string]interface{}, va
 			field = &PamResources{}
 		case "checkbox":
 			field = &Checkbox{}
+		case "script":
+			field = &Scripts{}
 		default:
 			return nil, fmt.Errorf("unable to convert unknown field type %v", fieldType)
 		}
@@ -702,7 +725,8 @@ func IsFieldClass(field interface{}) bool {
 		SecureNote, *SecureNote,
 		SecurityQuestions, *SecurityQuestions,
 		Text, *Text,
-		Url, *Url:
+		Url, *Url,
+		Scripts, *Scripts:
 		return true
 	}
 	return false
