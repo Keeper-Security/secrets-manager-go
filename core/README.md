@@ -150,6 +150,13 @@ secretsManager.Save(secretToUpdate)
 
 # Change Log
 
+## 1.5.2
+
+* KSM-409 New field type: Passkey
+* KSM-404 New filed type: script and modification to some record types
+* KSM-384 Support for record Transactions
+
+
 ## 1.5.0
 
 * KSM-317 - Notation improvements
