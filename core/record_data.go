@@ -598,6 +598,8 @@ func NewScripts(value Script) *Scripts {
 	return &Scripts{
 		KeeperRecordField: KeeperRecordField{Type: "script"},
 		Value:             []Script{value},
+	}
+}
 
 type Passkey struct {
 	PrivateKey   string `json:"privateKey,omitempty"`
