@@ -598,6 +598,28 @@ func NewScripts(value Script) *Scripts {
 	return &Scripts{
 		KeeperRecordField: KeeperRecordField{Type: "script"},
 		Value:             []Script{value},
+
+type Passkey struct {
+	PrivateKey   string `json:"privateKey,omitempty"`
+	CredentialId string `json:"credentialId,omitempty"`
+	SignCount    int64  `json:"signCount,omitempty"`
+	UserId       string `json:"userId,omitempty"`
+	RelyingParty string `json:"relyingParty,omitempty"`
+	Username     string `json:"username,omitempty"`
+	CreatedDate  int64  `json:"createdDate,omitempty"`
+}
+
+type Passkeys struct {
+	KeeperRecordField
+	Required bool      `json:"required,omitempty"`
+	Value    []Passkey `json:"value,omitempty"`
+}
+
+// Passkeys field constructor with the single value to eliminate the complexity of the passing List as a value
+func NewPasskeys(value Passkey) *Passkeys {
+	return &Passkeys{
+		KeeperRecordField: KeeperRecordField{Type: "passkey"},
+		Value:             []Passkey{value},
 	}
 }
 
@@ -673,6 +695,8 @@ func getKeeperRecordField(fieldType string, fieldData map[string]interface{}, va
 			field = &Checkbox{}
 		case "script":
 			field = &Scripts{}
+		case "passkey":
+			field = &Passkeys{}
 		default:
 			return nil, fmt.Errorf("unable to convert unknown field type %v", fieldType)
 		}
@@ -727,6 +751,7 @@ func IsFieldClass(field interface{}) bool {
 		Text, *Text,
 		Url, *Url,
 		Scripts, *Scripts:
+		Passkeys, *Passkeys:
 		return true
 	}
 	return false
