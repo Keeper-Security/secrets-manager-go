@@ -752,7 +752,7 @@ func IsFieldClass(field interface{}) bool {
 		SecurityQuestions, *SecurityQuestions,
 		Text, *Text,
 		Url, *Url,
-		Scripts, *Scripts:
+		Scripts, *Scripts,
 		Passkeys, *Passkeys:
 		return true
 	}
