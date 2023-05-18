@@ -62,12 +62,21 @@ func (p *GetPayload) GetPayloadFromJson(jsonData string) {
 	}
 }
 
+type UpdateTransactionType string
+
+const (
+	TransactionTypeNone     UpdateTransactionType = ""
+	TransactionTypeGeneral  UpdateTransactionType = "general"
+	TransactionTypeRotation UpdateTransactionType = "rotation"
+)
+
 type UpdatePayload struct {
-	ClientVersion string `json:"clientVersion"`
-	ClientId      string `json:"clientId"`
-	RecordUid     string `json:"recordUid"`
-	Revision      int64  `json:"revision"`
-	Data          string `json:"data"`
+	ClientVersion   string                `json:"clientVersion"`
+	ClientId        string                `json:"clientId"`
+	RecordUid       string                `json:"recordUid"`
+	Revision        int64                 `json:"revision"`
+	Data            string                `json:"data"`
+	TransactionType UpdateTransactionType `json:"transactionType,omitempty"`
 }
 
 func (p *UpdatePayload) UpdatePayloadToJson() (string, error) {
@@ -87,6 +96,32 @@ func (p *UpdatePayload) UpdatePayloadFromJson(jsonData string) {
 		*p = res
 	} else {
 		klog.Error("Error deserializing UpdatePayload from JSON: " + err.Error())
+	}
+}
+
+type CompleteTransactionPayload struct {
+	ClientVersion string `json:"clientVersion"`
+	ClientId      string `json:"clientId"`
+	RecordUid     string `json:"recordUid"`
+}
+
+func (p *CompleteTransactionPayload) CompleteTransactionPayloadToJson() (string, error) {
+	if pb, err := json.Marshal(p); err == nil {
+		return string(pb), nil
+	} else {
+		klog.Error("Error serializing CompleteTransactionPayload to JSON: " + err.Error())
+		return "", err
+	}
+}
+
+func (p *CompleteTransactionPayload) CompleteTransactionPayloadFromJson(jsonData string) {
+	bytes := []byte(jsonData)
+	res := CompleteTransactionPayload{}
+
+	if err := json.Unmarshal(bytes, &res); err == nil {
+		*p = res
+	} else {
+		klog.Error("Error deserializing CompleteTransactionPayload from JSON: " + err.Error())
 	}
 }
 
