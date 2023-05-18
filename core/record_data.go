@@ -580,6 +580,25 @@ func NewCheckbox(value bool) *Checkbox {
 	}
 }
 
+type Script struct {
+	FileRef   string   `json:"fileRef,omitempty"`
+	Command   string   `json:"command,omitempty"`
+	RecordRef []string `json:"recordRef,omitempty"`
+}
+
+type Scripts struct {
+	KeeperRecordField
+	Required      bool     `json:"required,omitempty"`
+	PrivacyScreen bool     `json:"privacyScreen,omitempty"`
+	Value         []Script `json:"value,omitempty"`
+}
+
+// Scripts field constructor with the single value to eliminate the complexity of the passing List as a value
+func NewScripts(value Script) *Scripts {
+	return &Scripts{
+		KeeperRecordField: KeeperRecordField{Type: "script"},
+		Value:             []Script{value},
+
 type Passkey struct {
 	PrivateKey   string `json:"privateKey,omitempty"`
 	CredentialId string `json:"credentialId,omitempty"`
@@ -674,6 +693,8 @@ func getKeeperRecordField(fieldType string, fieldData map[string]interface{}, va
 			field = &PamResources{}
 		case "checkbox":
 			field = &Checkbox{}
+		case "script":
+			field = &Scripts{}
 		case "passkey":
 			field = &Passkeys{}
 		default:
@@ -729,6 +750,7 @@ func IsFieldClass(field interface{}) bool {
 		SecurityQuestions, *SecurityQuestions,
 		Text, *Text,
 		Url, *Url,
+		Scripts, *Scripts:
 		Passkeys, *Passkeys:
 		return true
 	}
