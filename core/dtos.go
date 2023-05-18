@@ -1409,7 +1409,7 @@ func convertToKeeperRecordField(fieldData interface{}, validate bool) (interface
 		"|birthDate|date|expirationDate|text|securityQuestion|multiline|email|cardRef" +
 		"|addressRef|pinCode|phone|secret|note|accountNumber|paymentCard|bankAccount" +
 		"|keyPair|host|address|licenseNumber|recordRef|schedule|directoryType|databaseType" +
-		"|pamHostname|pamResources|checkbox|"
+		"|pamHostname|pamResources|checkbox|passkey|"
 	if fMap, ok := fieldData.(map[string]interface{}); ok {
 		if fType, found := fMap["type"]; found {
 			if sType, ok := fType.(string); ok && strings.Contains(fieldTypes, "|"+sType+"|") {
