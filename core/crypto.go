@@ -24,6 +24,7 @@ import (
 const (
 	Aes256KeySize    = 32
 	AesGcmNonceSize  = 12
+	AesCbcNonceSize  = 16
 	DefaultBlockSize = 16
 )
 
@@ -110,8 +111,9 @@ func (priv *PrivateKey) Equals(k *PrivateKey) bool {
 }
 
 // Sign signs digest with priv, reading randomness from rand.
-//  The opts argument is not currently used but, in keeping with the crypto.Signer interface,
-//  should be the hash function used to digest the message.
+//
+//	The opts argument is not currently used but, in keeping with the crypto.Signer interface,
+//	should be the hash function used to digest the message.
 func (priv *PrivateKey) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
 	return (*ecdsa.PrivateKey)(priv).Sign(rand, digest, opts)
 }
@@ -194,6 +196,87 @@ func EncryptAesGcmFull(data, key, nonce []byte) ([]byte, error) {
 	return result, nil
 }
 
+// Decrypt AES-GCM encrypted message
+func Decrypt(data, key []byte) ([]byte, error) {
+	if len(data) <= AesGcmNonceSize {
+		return nil, errors.New("error decrypting AES-GCM - message is too short")
+	}
+
+	c, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(c)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce := make([]byte, AesGcmNonceSize)
+	copy(nonce, data)
+
+	result, err := gcm.Open(nil, nonce, data[AesGcmNonceSize:], nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// Encrypt a message using AES-CBC.
+func EncryptAesCbc(data []byte, key []byte) ([]byte, error) {
+	return EncryptAesCbcFull(data, key, nil)
+}
+
+// Encrypt a message using AES-CBC with custom nonce.
+func EncryptAesCbcFull(data, key, nonce []byte) ([]byte, error) {
+	c, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(nonce) == 0 {
+		nonce, err = GetRandomBytes(AesCbcNonceSize)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(nonce) != AesCbcNonceSize {
+		return nil, errors.New("incorrect nonce size")
+	}
+
+	cbc := cipher.NewCBCEncrypter(c, nonce)
+	data = pkcs7Pad(data)
+	encrypted := make([]byte, len(data))
+	cbc.CryptBlocks(encrypted, data)
+
+	result := append(nonce, encrypted...)
+	return result, nil
+}
+
+// Decrypt AES-CBC encrypted message
+func DecryptAesCbc(data, key []byte) ([]byte, error) {
+	if len(data) <= AesCbcNonceSize {
+		return nil, errors.New("error decrypting AES-CBC - message is too short")
+	}
+
+	c, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce := make([]byte, AesCbcNonceSize)
+	copy(nonce, data)
+	cbc := cipher.NewCBCDecrypter(c, nonce)
+
+	data = data[AesCbcNonceSize:]
+	decrypted := make([]byte, len(data))
+	cbc.CryptBlocks(decrypted, data)
+
+	result := pkcs7Unpad(decrypted)
+	return result, nil
+}
+
 func PublicEncrypt(data []byte, serverPublicRawKeyBytes []byte, idz []byte) (encrypted []byte, err error) {
 	ephemeralKey2, err := GenerateNewEccKey()
 	if err != nil {
@@ -228,33 +311,6 @@ func PublicEncrypt(data []byte, serverPublicRawKeyBytes []byte, idz []byte) (enc
 	encrypted = append(ephPublicKey, encryptedData...)
 
 	return encrypted, nil
-}
-
-// Decrypt AES-GCM encrypted message
-func Decrypt(data, key []byte) ([]byte, error) {
-	if len(data) <= AesGcmNonceSize {
-		return nil, errors.New("error decrpyting AES-GCM - message is too short")
-	}
-
-	c, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-
-	gcm, err := cipher.NewGCM(c)
-	if err != nil {
-		return nil, err
-	}
-
-	nonce := make([]byte, AesGcmNonceSize)
-	copy(nonce, data)
-
-	result, err := gcm.Open(nil, nonce, data[AesGcmNonceSize:], nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
 }
 
 func DecryptRecord(data, secretKey []byte) (string, error) {
@@ -389,6 +445,9 @@ func ECDH_Ecdsa(priv *ecdsa.PrivateKey, pub *ecdsa.PublicKey) ([]byte, error) {
 }
 
 func pkcs7Pad(data []byte) []byte {
+	// With PKCS#7, we’re always going to pad,
+	// so if our block length was 16, and our plaintext length was 16,
+	// then it would be padded with 16 bytes of 16 at the end.
 	n := DefaultBlockSize - (len(data) % DefaultBlockSize)
 	pb := make([]byte, len(data)+n)
 	copy(pb, data)
