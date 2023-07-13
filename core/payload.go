@@ -40,6 +40,7 @@ type GetPayload struct {
 	ClientId         string   `json:"clientId"`
 	PublicKey        string   `json:"publicKey,omitempty"`
 	RequestedRecords []string `json:"requestedRecords"`
+	RequestedFolders []string `json:"requestedFolders"`
 }
 
 func (p *GetPayload) GetPayloadToJson() (string, error) {
@@ -133,6 +134,7 @@ type CreatePayload struct {
 	FolderUid     string `json:"folderUid"`
 	FolderKey     string `json:"folderKey"`
 	Data          string `json:"data"`
+	SubFolderUid  string `json:"subFolderUid"`
 }
 
 func (p *CreatePayload) CreatePayloadToJson() (string, error) {
@@ -178,6 +180,90 @@ func (p *DeletePayload) DeletePayloadFromJson(jsonData string) {
 		*p = res
 	} else {
 		klog.Error("Error deserializing DeletePayload from JSON: " + err.Error())
+	}
+}
+
+type CreateFolderPayload struct {
+	ClientVersion   string `json:"clientVersion"`
+	ClientId        string `json:"clientId"`
+	FolderUid       string `json:"folderUid"`
+	SharedFolderUid string `json:"sharedFolderUid"`
+	SharedFolderKey string `json:"sharedFolderKey"`
+	Data            string `json:"data"`
+	ParentUid       string `json:"parentUid"`
+}
+
+func (p *CreateFolderPayload) CreateFolderPayloadToJson() (string, error) {
+	if pb, err := json.Marshal(p); err == nil {
+		return string(pb), nil
+	} else {
+		klog.Error("Error serializing CreateFolderPayload to JSON: " + err.Error())
+		return "", err
+	}
+}
+
+func (p *CreateFolderPayload) CreateFolderPayloadFromJson(jsonData string) {
+	bytes := []byte(jsonData)
+	res := CreateFolderPayload{}
+
+	if err := json.Unmarshal(bytes, &res); err == nil {
+		*p = res
+	} else {
+		klog.Error("Error deserializing CreateFolderPayload from JSON: " + err.Error())
+	}
+}
+
+type UpdateFolderPayload struct {
+	ClientVersion string `json:"clientVersion"`
+	ClientId      string `json:"clientId"`
+	FolderUid     string `json:"folderUid"`
+	Data          string `json:"data"`
+}
+
+func (p *UpdateFolderPayload) UpdateFolderPayloadToJson() (string, error) {
+	if pb, err := json.Marshal(p); err == nil {
+		return string(pb), nil
+	} else {
+		klog.Error("Error serializing UpdateFolderPayload to JSON: " + err.Error())
+		return "", err
+	}
+}
+
+func (p *UpdateFolderPayload) UpdateFolderPayloadFromJson(jsonData string) {
+	bytes := []byte(jsonData)
+	res := UpdateFolderPayload{}
+
+	if err := json.Unmarshal(bytes, &res); err == nil {
+		*p = res
+	} else {
+		klog.Error("Error deserializing UpdateFolderPayload from JSON: " + err.Error())
+	}
+}
+
+type DeleteFolderPayload struct {
+	ClientVersion string   `json:"clientVersion"`
+	ClientId      string   `json:"clientId"`
+	FolderUids    []string `json:"folderUids"`
+	ForceDeletion bool     `json:"forceDeletion"`
+}
+
+func (p *DeleteFolderPayload) DeleteFolderPayloadToJson() (string, error) {
+	if pb, err := json.Marshal(p); err == nil {
+		return string(pb), nil
+	} else {
+		klog.Error("Error serializing DeleteFolderPayload to JSON: " + err.Error())
+		return "", err
+	}
+}
+
+func (p *DeleteFolderPayload) DeleteFolderPayloadFromJson(jsonData string) {
+	bytes := []byte(jsonData)
+	res := DeleteFolderPayload{}
+
+	if err := json.Unmarshal(bytes, &res); err == nil {
+		*p = res
+	} else {
+		klog.Error("Error deserializing DeleteFolderPayload from JSON: " + err.Error())
 	}
 }
 
@@ -238,4 +324,14 @@ func NewKsmHttpResponse(statusCode int, data []byte, httpResponse *http.Response
 		Data:         data,
 		HttpResponse: httpResponse,
 	}
+}
+
+type QueryOptions struct {
+	RecordsFilter []string
+	FoldersFilter []string
+}
+
+type CreateOptions struct {
+	FolderUid    string
+	SubFolderUid string
 }
