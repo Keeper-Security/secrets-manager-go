@@ -359,6 +359,18 @@ func (c *SecretsManager) encryptAndSignPayload(transmissionKey *TransmissionKey,
 		if payloadJsonStr, err = v.DeletePayloadToJson(); err != nil {
 			return nil, errors.New("error converting delete payload to JSON: " + err.Error())
 		}
+	case *CreateFolderPayload:
+		if payloadJsonStr, err = v.CreateFolderPayloadToJson(); err != nil {
+			return nil, errors.New("error converting create folder payload to JSON: " + err.Error())
+		}
+	case *UpdateFolderPayload:
+		if payloadJsonStr, err = v.UpdateFolderPayloadToJson(); err != nil {
+			return nil, errors.New("error converting update folder payload to JSON: " + err.Error())
+		}
+	case *DeleteFolderPayload:
+		if payloadJsonStr, err = v.DeleteFolderPayloadToJson(); err != nil {
+			return nil, errors.New("error converting delete folder payload to JSON: " + err.Error())
+		}
 	case *CompleteTransactionPayload:
 		if payloadJsonStr, err = v.CompleteTransactionPayloadToJson(); err != nil {
 			return nil, errors.New("error converting complete transaction payload to JSON: " + err.Error())
@@ -400,10 +412,14 @@ func (c *SecretsManager) encryptAndSignPayload(transmissionKey *TransmissionKey,
 	}, nil
 }
 
-func (c *SecretsManager) prepareGetPayload(recordsFilter []string) (res *GetPayload, err error) {
+func (c *SecretsManager) prepareGetPayload(queryOptions QueryOptions) (res *GetPayload, err error) {
 	payload := GetPayload{
 		ClientVersion: keeperSecretsManagerClientId,
 		ClientId:      c.Config.Get(KEY_CLIENT_ID),
+	}
+
+	if payload.ClientId == "" {
+		return nil, errors.New("client ID is missing from the configuration")
 	}
 
 	if appKeyStr := c.Config.Get(KEY_APP_KEY); strings.TrimSpace(appKeyStr) == "" {
@@ -416,8 +432,11 @@ func (c *SecretsManager) prepareGetPayload(recordsFilter []string) (res *GetPayl
 		}
 	}
 
-	if len(recordsFilter) > 0 {
-		payload.RequestedRecords = recordsFilter
+	if len(queryOptions.RecordsFilter) > 0 {
+		payload.RequestedRecords = queryOptions.RecordsFilter
+	}
+	if len(queryOptions.FoldersFilter) > 0 {
+		payload.RequestedFolders = queryOptions.FoldersFilter
 	}
 
 	return &payload, nil
@@ -481,23 +500,25 @@ func (c *SecretsManager) prepareDeletePayload(recordUids []string) (res *DeleteP
 	return &payload, nil
 }
 
-func (c *SecretsManager) prepareCreatePayload(record *Record) (res *CreatePayload, err error) {
+func (c *SecretsManager) prepareCreatePayload(record *Record, createOptions CreateOptions, folderKey []byte) (res *CreatePayload, err error) {
 	payload := CreatePayload{
 		ClientVersion: keeperSecretsManagerClientId,
 		ClientId:      c.Config.Get(KEY_CLIENT_ID),
+		FolderUid:     createOptions.FolderUid,
+		SubFolderUid:  createOptions.SubFolderUid,
 	}
 
 	ownerPublicKey := strings.TrimSpace(c.Config.Get(KEY_OWNER_PUBLIC_KEY))
 	if ownerPublicKey == "" {
-		return nil, fmt.Errorf("unable to create record - owner key is missing. Looks like application was created using outdated client (Web Vault or Commander)")
+		return nil, fmt.Errorf("unable to create record - App owner public key is missing. Looks like application was created using outdated client (Web Vault or Commander)")
 	}
 	ownerPublicKeyBytes := Base64ToBytes(ownerPublicKey)
 
-	if strings.TrimSpace(record.folderUid) == "" {
+	if strings.TrimSpace(createOptions.FolderUid) == "" {
 		return nil, fmt.Errorf("unable to create record - missing folder UID")
 	}
-	if len(record.folderKeyBytes) == 0 {
-		return nil, fmt.Errorf("unable to create record - folder key for '%s' missing", record.folderUid)
+	if len(folderKey) == 0 {
+		return nil, fmt.Errorf("unable to create record - folder key for '%s' missing", createOptions.FolderUid)
 	}
 	if strings.TrimSpace(payload.ClientId) == "" {
 		return nil, fmt.Errorf("unable to create record - client Id is missing from the configuration")
@@ -508,9 +529,7 @@ func (c *SecretsManager) prepareCreatePayload(record *Record) (res *CreatePayloa
 
 	// convert any record UID in Base64 encoding to UrlSafeBase64
 	recordUid := BytesToUrlSafeStr(Base64ToBytes(record.Uid))
-
 	payload.RecordUid = recordUid
-	payload.FolderUid = record.folderUid
 
 	rawJsonBytes := StringToBytes(record.RawJson)
 	if encryptedRawJsonBytes, err := EncryptAesGcm(rawJsonBytes, record.RecordKeyBytes); err == nil {
@@ -519,7 +538,7 @@ func (c *SecretsManager) prepareCreatePayload(record *Record) (res *CreatePayloa
 		return nil, err
 	}
 
-	if encryptedFolderKey, err := EncryptAesGcm(record.RecordKeyBytes, record.folderKeyBytes); err == nil {
+	if encryptedFolderKey, err := EncryptAesGcm(record.RecordKeyBytes, folderKey); err == nil {
 		payload.FolderKey = BytesToBase64(encryptedFolderKey)
 	} else {
 		return nil, err
@@ -622,6 +641,78 @@ func (c *SecretsManager) prepareFileUploadPayload(record *Record, file *KeeperFi
 	}
 
 	return &payload, encryptedFileData, nil
+}
+
+func (c *SecretsManager) prepareCreateFolderPayload(createOptions CreateOptions, folderName string, sharedFolderKey []byte) (res *CreateFolderPayload, err error) {
+	payload := CreateFolderPayload{
+		ClientVersion:   keeperSecretsManagerClientId,
+		ClientId:        c.Config.Get(KEY_CLIENT_ID),
+		SharedFolderUid: createOptions.FolderUid,
+		ParentUid:       createOptions.SubFolderUid,
+	}
+
+	if strings.TrimSpace(payload.ClientId) == "" {
+		return nil, fmt.Errorf("unable to update folder - client Id is missing from the configuration")
+	}
+
+	folderUid, _ := GetRandomBytes(16)
+	payload.FolderUid = BytesToUrlSafeStr(folderUid)
+
+	folderKey, _ := GetRandomBytes(32)
+	if encryptedFolderKey, err := EncryptAesCbc(folderKey, sharedFolderKey); err == nil {
+		payload.SharedFolderKey = BytesToUrlSafeStr(encryptedFolderKey)
+	} else {
+		return nil, err
+	}
+
+	keeperFolderName := map[string]interface{}{"name": folderName}
+	folderDataJson := DictToJson(keeperFolderName)
+	folderDataBytes := []byte(folderDataJson)
+	if encryptedFolderData, err := EncryptAesCbc(folderDataBytes, folderKey); err == nil {
+		payload.Data = BytesToUrlSafeStr(encryptedFolderData)
+	} else {
+		return nil, err
+	}
+
+	return &payload, nil
+}
+
+func (c *SecretsManager) prepareUpdateFolderPayload(folderUid string, folderName string, folderKey []byte) (res *UpdateFolderPayload, err error) {
+	payload := UpdateFolderPayload{
+		ClientVersion: keeperSecretsManagerClientId,
+		ClientId:      c.Config.Get(KEY_CLIENT_ID),
+		FolderUid:     folderUid,
+	}
+
+	keeperFolderName := map[string]interface{}{"name": folderName}
+	folderDataJson := DictToJson(keeperFolderName)
+	folderDataBytes := []byte(folderDataJson)
+	if encryptedFolderData, err := EncryptAesCbc(folderDataBytes, folderKey); err == nil {
+		payload.Data = BytesToUrlSafeStr(encryptedFolderData)
+	} else {
+		return nil, err
+	}
+
+	if strings.TrimSpace(payload.ClientId) == "" {
+		return nil, fmt.Errorf("unable to update folder - client Id is missing from the configuration")
+	}
+
+	return &payload, nil
+}
+
+func (c *SecretsManager) prepareDeleteFolderPayload(folderUids []string, forceDeletion bool) (res *DeleteFolderPayload, err error) {
+	payload := DeleteFolderPayload{
+		ClientVersion: keeperSecretsManagerClientId,
+		ClientId:      c.Config.Get(KEY_CLIENT_ID),
+		FolderUids:    folderUids,
+		ForceDeletion: forceDeletion,
+	}
+
+	if strings.TrimSpace(payload.ClientId) == "" {
+		return nil, fmt.Errorf("unable to delete folder - client Id is missing from the configuration")
+	}
+
+	return &payload, nil
 }
 
 func (c *SecretsManager) PostQuery(path string, payload interface{}) (body []byte, err error) {
@@ -825,12 +916,103 @@ func (c *SecretsManager) HandleHttpError(rs *http.Response, body []byte, httpErr
 	return
 }
 
-func (c *SecretsManager) fetchAndDecryptSecrets(recordFilter []string) (smr *SecretsManagerResponse, err error) {
+func GetSharedFolderKey(folders []*KeeperFolder, responseFolders []interface{}, parent string) []byte {
+	for {
+		parentFolderUid := ""
+		parentFolderParentUid := ""
+		for _, f := range responseFolders {
+			fmap := f.(map[string]interface{})
+			if iUid, found := fmap["folderUid"]; found && iUid != nil {
+				if fuid, ok := iUid.(string); ok && fuid == parent {
+					parentFolderUid = fuid
+					if iPUid, found := fmap["parent"]; found && iPUid != nil {
+						if pfuid, ok := iPUid.(string); ok && pfuid != "" {
+							parentFolderParentUid = pfuid
+						}
+					}
+				}
+			}
+		}
+		if parentFolderUid == "" {
+			return nil
+		}
+		if parentFolderParentUid == "" {
+			for _, f := range folders {
+				if f.FolderUid == parentFolderUid {
+					return f.FolderKey
+				}
+			}
+			return nil
+		}
+		parent = parentFolderParentUid
+	}
+}
+
+func (c *SecretsManager) fetchAndDecryptFolders() (folders []*KeeperFolder, err error) {
+	folders = []*KeeperFolder{}
+	payload, err := c.prepareGetPayload(QueryOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	decryptedResponseBytes, err := c.PostQuery("get_folders", payload)
+	if err != nil {
+		return nil, err
+	}
+
+	decryptedResponseStr := BytesToString(decryptedResponseBytes)
+	decryptedResponseDict := JsonToDict(decryptedResponseStr)
+
+	appKey := Base64ToBytes(c.Config.Get(KEY_APP_KEY))
+	if len(appKey) == 0 {
+		return nil, errors.New("app key is missing from the storage")
+	}
+
+	if foldersResp, found := decryptedResponseDict["folders"]; found && foldersResp != nil {
+		if siFolders, ok := foldersResp.([]interface{}); ok {
+			for _, f := range siFolders {
+				fkey := []byte{}
+				fmap := f.(map[string]interface{})
+				if iParent, found := fmap["parent"]; found && iParent != nil {
+					if parent, ok := iParent.(string); ok && parent != "" {
+						sharedFolderKey := GetSharedFolderKey(folders, siFolders, parent)
+						sKey := fmap["folderKey"].(string)
+						if folderKey, err := DecryptAesCbc(UrlSafeStrToBytes(sKey), sharedFolderKey); err == nil {
+							fkey = folderKey
+						}
+					}
+				} else {
+					// no parent - use appKey to decrypt
+					sKey := fmap["folderKey"].(string)
+					if folderKey, err := Decrypt(UrlSafeStrToBytes(sKey), appKey); err == nil {
+						fkey = folderKey
+					}
+				}
+				if len(fkey) == 0 {
+					klog.Error("failed to decrypt the folder key")
+				}
+
+				folder := NewKeeperFolder(fmap, fkey)
+				if f != nil {
+					folders = append(folders, folder)
+				} else {
+					klog.Error("error parsing folder JSON: ", f)
+				}
+			}
+		} else {
+			klog.Error("folder JSON is in incorrect format")
+		}
+	}
+
+	return
+}
+
+func (c *SecretsManager) fetchAndDecryptSecrets(queryOptions QueryOptions) (smr *SecretsManagerResponse, err error) {
 	records := []*Record{}
 	folders := []*Folder{}
 	justBound := false
 
-	payload, err := c.prepareGetPayload(recordFilter)
+	payload, err := c.prepareGetPayload(queryOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -948,12 +1130,21 @@ func (c *SecretsManager) fetchAndDecryptSecrets(recordFilter []string) (smr *Sec
 
 func (c *SecretsManager) GetSecretsFullResponse(uids []string) (response *SecretsManagerResponse, err error) {
 	// Retrieve all records associated with the given application
-	recordsResp, err := c.fetchAndDecryptSecrets(uids)
+	// optionally filtered by record uids
+	queryOptions := QueryOptions{RecordsFilter: uids}
+	return c.GetSecretsFullResponseWithOptions(queryOptions)
+}
+
+func (c *SecretsManager) GetSecretsFullResponseWithOptions(queryOptions QueryOptions) (response *SecretsManagerResponse, err error) {
+	// Retrieve records associated with the given application
+	// optionally filtered by the query options
+
+	recordsResp, err := c.fetchAndDecryptSecrets(queryOptions)
 	if err != nil {
 		return nil, err
 	}
 	if recordsResp.JustBound {
-		recordsResp, err = c.fetchAndDecryptSecrets(uids)
+		recordsResp, err = c.fetchAndDecryptSecrets(queryOptions)
 		if err != nil {
 			return nil, err
 		}
@@ -968,12 +1159,28 @@ func (c *SecretsManager) GetSecretsFullResponse(uids []string) (response *Secret
 	return recordsResp, nil
 }
 
+// GetSecrets retrieves all records associated with the given application
+// optionally filtered by uids
 func (c *SecretsManager) GetSecrets(uids []string) (records []*Record, err error) {
 	resp, rerr := c.GetSecretsFullResponse(uids)
 	if rerr != nil || resp == nil {
 		return nil, rerr
 	}
 	return resp.Records, rerr
+}
+
+// GetSecretsWithOptions retrieves all records associated with the given application
+// optionally filtered by query options
+func (c *SecretsManager) GetSecretsWithOptions(queryOptions QueryOptions) (records []*Record, err error) {
+	resp, rerr := c.GetSecretsFullResponseWithOptions(queryOptions)
+	if rerr != nil || resp == nil {
+		return nil, rerr
+	}
+	return resp.Records, rerr
+}
+
+func (c *SecretsManager) GetFolders() ([]*KeeperFolder, error) {
+	return c.fetchAndDecryptFolders()
 }
 
 func (c *SecretsManager) GetSecretsByTitle(recordTitle string) (records []*Record, err error) {
@@ -1196,8 +1403,17 @@ func (c *SecretsManager) DeleteSecrets(recordUids []string) (statuses map[string
 	return statuses, err
 }
 
+// CreateSecret creates new record from a cloned record found by NewRecord
+// and the new record will be placed into the same shared folder as the original
 func (c *SecretsManager) CreateSecret(record *Record) (recordUid string, err error) {
-	payload, err := c.prepareCreatePayload(record)
+	// Records shared directly to the application cannot be used as template records
+	// only records in a shared folder (shared to the application) should be used as templates
+	if strings.TrimSpace(record.folderUid) == "" || len(record.folderKeyBytes) == 0 {
+		return "", fmt.Errorf("record %s is not in a shared folder - cannot create secret", record.Uid)
+	}
+
+	createOptions := CreateOptions{FolderUid: record.folderUid}
+	payload, err := c.prepareCreatePayload(record, createOptions, record.folderKeyBytes)
 	if err != nil {
 		return "", err
 	}
@@ -1215,7 +1431,7 @@ func (c *SecretsManager) CreateSecretWithRecordData(recUid, folderUid string, re
 	//   - providing data as CreateRecord struct
 	// Here we will use CreateRecord objects
 
-	if recordData == nil || recordData.RecordType == "" || recordData.Title == "" {
+	if recordData == nil || recordData.RecordType == "" {
 		return "", errors.New("new record data has to be a valid 'RecordCreate' object")
 	}
 
@@ -1244,13 +1460,167 @@ func (c *SecretsManager) CreateSecretWithRecordData(recUid, folderUid string, re
 	if record == nil {
 		return "", fmt.Errorf("failed to create new record from record data: %v", recordData)
 	}
-	payload, err := c.prepareCreatePayload(record)
+	createOptions := CreateOptions{FolderUid: folderUid}
+	payload, err := c.prepareCreatePayload(record, createOptions, foundFolder.key)
 	if err != nil {
 		return "", err
 	}
 
 	_, err = c.PostQuery("create_secret", payload)
 	return payload.RecordUid, err
+}
+
+// CreateSecretWithRecordDataAndOptions creates new record using CreateOptions and record data provided
+func (c *SecretsManager) CreateSecretWithRecordDataAndOptions(createOptions CreateOptions, recordData *RecordCreate, folders []*KeeperFolder) (recordUid string, err error) {
+	if recordData == nil || recordData.RecordType == "" {
+		return "", errors.New("new record data has to be a valid 'RecordCreate' object")
+	}
+
+	if len(folders) == 0 {
+		if folders, err = c.GetFolders(); err != nil {
+			return "", err
+		}
+	}
+
+	folderKey := []byte{}
+	for _, fldr := range folders {
+		if fldr.FolderUid == createOptions.FolderUid {
+			folderKey = fldr.FolderKey
+			break
+		}
+	}
+
+	if len(folderKey) == 0 {
+		return "", errors.New("unable to update folder - folder key for " + createOptions.FolderUid + " not found")
+	}
+
+	folder := &Folder{key: folderKey, uid: createOptions.FolderUid}
+	record := NewRecordFromRecordData(recordData, folder)
+	if record == nil {
+		return "", fmt.Errorf("failed to create new record from record data: %v", recordData)
+	}
+
+	payload, err := c.prepareCreatePayload(record, createOptions, folderKey)
+	if err != nil {
+		return "", err
+	}
+
+	_, err = c.PostQuery("create_secret", payload)
+	return payload.RecordUid, err
+}
+
+// CreateFolder creates new folder using the provided options.
+//
+// folders == nil will force downloading all folders metadata with every request.
+// Folders metadata could be retrieved from GetFolders() and cached and reused
+// as long as it is not modified externally or internally
+//
+// createOptions.FolderUid is required and must be a parent shared folder
+//
+// createOptions.SubFolderUid could be many levels deep under its parent.
+// If SubFolderUid is empty - new folder is created under parent FolderUid
+func (c *SecretsManager) CreateFolder(createOptions CreateOptions, folderName string, folders []*KeeperFolder) (folderUid string, err error) {
+	if len(folders) == 0 {
+		if folders, err = c.GetFolders(); err != nil {
+			return "", err
+		}
+	}
+
+	folderKey := []byte{}
+	for _, fldr := range folders {
+		if fldr.FolderUid == createOptions.FolderUid {
+			folderKey = fldr.FolderKey
+			break
+		}
+	}
+
+	if len(folderKey) == 0 {
+		return "", errors.New("Unable to create folder - folder key for " + createOptions.FolderUid + " not found")
+	}
+
+	payload, err := c.prepareCreateFolderPayload(createOptions, folderName, folderKey)
+	if err != nil {
+		return "", err
+	}
+
+	if _, err = c.PostQuery("create_folder", payload); err != nil {
+		return "", err
+	}
+
+	return payload.FolderUid, nil
+}
+
+// UpdateFolder changes the folder metadata - currently folder name only
+// folders == nil will force downloading all folders metadata with every request
+func (c *SecretsManager) UpdateFolder(folderUid, folderName string, folders []*KeeperFolder) (err error) {
+	if len(folders) == 0 {
+		if folders, err = c.GetFolders(); err != nil {
+			return err
+		}
+	}
+
+	folderKey := []byte{}
+	for _, fldr := range folders {
+		if fldr.FolderUid == folderUid {
+			folderKey = fldr.FolderKey
+			break
+		}
+	}
+
+	if len(folderKey) == 0 {
+		return errors.New("Unable to update folder - folder key for " + folderUid + " not found")
+	}
+
+	payload, err := c.prepareUpdateFolderPayload(folderUid, folderName, folderKey)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.PostQuery("update_folder", payload)
+	return err
+}
+
+// DeleteFolder removes the selected folders.
+// Use forceDeletion flag to remove non-empty folders
+// Note! When using forceDeletion avoid sending parent with its children folder UIDs.
+// Depending on the delete order you may get an error ex. if parent force-deleted child first.
+// There's no guarantee that list will always be processed in FIFO order.
+// Note! Any folders UIDs missing from the vault or not shared to the KSM Application
+// will not result in error.
+func (c *SecretsManager) DeleteFolder(folderUids []string, forceDeletion bool) (statuses map[string]string, err error) {
+	statuses = map[string]string{}
+	if len(folderUids) == 0 {
+		return statuses, nil
+	}
+
+	payload, err := c.prepareDeleteFolderPayload(folderUids, forceDeletion)
+	if err != nil {
+		return statuses, err
+	}
+
+	resp, err := c.PostQuery("delete_folder", payload)
+	if err != nil {
+		return statuses, err
+	}
+
+	if respJson := string(resp); respJson != "" {
+		dsr, err := DeleteFoldersResponseFromJson(respJson)
+		if err != nil {
+			return statuses, err
+		}
+		if dsr != nil && len(dsr.Folders) > 0 {
+			for _, v := range dsr.Folders {
+				message := v.ResponseCode
+				if v.ErrorMessage != "" {
+					message += ": " + v.ErrorMessage
+				}
+				statuses[v.FolderUid] = message
+				// Success - "UID": "ok", Error - "UID": "code: description"
+			}
+		}
+	}
+
+	return statuses, err
 }
 
 // Legacy notation

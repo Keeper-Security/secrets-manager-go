@@ -601,14 +601,24 @@ func NewScripts(value Script) *Scripts {
 	}
 }
 
+type PasskeyPrivateKey struct {
+	Crv    string   `json:"crv,omitempty"`
+	D      string   `json:"d,omitempty"`
+	Ext    bool     `json:"ext,omitempty"`
+	KeyOps []string `json:"key_ops,omitempty"`
+	Kty    string   `json:"kty,omitempty"`
+	X      string   `json:"x,omitempty"`
+	Y      int64    `json:"y,omitempty"`
+}
+
 type Passkey struct {
-	PrivateKey   string `json:"privateKey,omitempty"`
-	CredentialId string `json:"credentialId,omitempty"`
-	SignCount    int64  `json:"signCount,omitempty"`
-	UserId       string `json:"userId,omitempty"`
-	RelyingParty string `json:"relyingParty,omitempty"`
-	Username     string `json:"username,omitempty"`
-	CreatedDate  int64  `json:"createdDate,omitempty"`
+	PrivateKey   PasskeyPrivateKey `json:"privateKey,omitempty"`
+	CredentialId string            `json:"credentialId,omitempty"`
+	SignCount    int64             `json:"signCount,omitempty"`
+	UserId       string            `json:"userId,omitempty"`
+	RelyingParty string            `json:"relyingParty,omitempty"`
+	Username     string            `json:"username,omitempty"`
+	CreatedDate  int64             `json:"createdDate,omitempty"`
 }
 
 type Passkeys struct {

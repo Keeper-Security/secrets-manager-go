@@ -150,6 +150,11 @@ secretsManager.Save(secretToUpdate)
 
 # Change Log
 
+## 1.6.0
+
+* KSM-414 - Added support for Folders
+* KSM-435 - Improved Passkey field type support
+
 ## 1.5.2
 
 * KSM-409 New field type: Passkey
