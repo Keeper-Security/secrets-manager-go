@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -193,9 +194,13 @@ func NewMemoryKeyValueStorage(config ...interface{}) *memoryKeyValueStorage {
 		case string:
 			jsonStr := t
 			// Decode if config json was provided as base64 string
+			oldWriter := klog.Writer()
+			klog.SetOutput(io.Discard)
 			if decodedJson := Base64ToString(jsonStr); len(decodedJson) > 2 {
 				jsonStr = decodedJson
 			}
+			klog.SetOutput(oldWriter)
+
 			iConfig = JsonToDict(jsonStr)
 			if len(iConfig) == 0 {
 				strJson := fmt.Sprintf("%.16s", t)
