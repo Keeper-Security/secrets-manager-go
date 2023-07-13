@@ -1029,9 +1029,48 @@ func (r *Record) Print() {
 	}
 }
 
+type KeeperFolder struct {
+	FolderKey []byte
+	FolderUid string
+	ParentUid string
+	Name      string
+}
+
+func NewKeeperFolder(folderMap map[string]interface{}, folderKey []byte) *KeeperFolder {
+	folder := KeeperFolder{FolderKey: folderKey}
+	if key, found := folderMap["folderUid"]; found {
+		if val, ok := key.(string); ok {
+			folder.FolderUid = val
+		}
+	}
+	if key, found := folderMap["parent"]; found {
+		if val, ok := key.(string); ok {
+			folder.ParentUid = val
+		}
+	}
+	if key, found := folderMap["data"]; found {
+		if val, ok := key.(string); ok {
+			if folderNameJson, err := DecryptAesCbc(UrlSafeStrToBytes(val), folderKey); err == nil {
+				folderName := struct {
+					Name string `json:"name"`
+				}{}
+				if err := json.Unmarshal(folderNameJson, &folderName); err == nil {
+					folder.Name = folderName.Name
+				} else {
+					klog.Error("error parsing folder name: " + err.Error())
+				}
+			}
+		}
+	}
+
+	return &folder
+}
+
 type Folder struct {
-	uid           string
 	key           []byte
+	uid           string
+	ParentUid     string
+	Name          string
 	data          map[string]interface{}
 	folderRecords []map[string]interface{}
 }
@@ -1042,6 +1081,7 @@ func NewFolderFromJson(folderDict map[string]interface{}, secretKey []byte) *Fol
 	}
 	if uid, ok := folderDict["folderUid"]; ok {
 		folder.uid = strings.TrimSpace(uid.(string))
+		// only /get_folders retrieves parent and name/data
 		if folderKeyEnc, ok := folderDict["folderKey"]; ok {
 			if folderKey, err := Decrypt(Base64ToBytes(folderKeyEnc.(string)), secretKey); err == nil {
 				folder.key = folderKey
@@ -1409,7 +1449,7 @@ func convertToKeeperRecordField(fieldData interface{}, validate bool) (interface
 		"|birthDate|date|expirationDate|text|securityQuestion|multiline|email|cardRef" +
 		"|addressRef|pinCode|phone|secret|note|accountNumber|paymentCard|bankAccount" +
 		"|keyPair|host|address|licenseNumber|recordRef|schedule|directoryType|databaseType" +
-		"|pamHostname|pamResources|checkbox|passkey|script|"
+		"|pamHostname|pamResources|checkbox|script|passkey|"
 	if fMap, ok := fieldData.(map[string]interface{}); ok {
 		if fType, found := fMap["type"]; found {
 			if sType, ok := fType.(string); ok && strings.Contains(fieldTypes, "|"+sType+"|") {
@@ -1608,5 +1648,26 @@ func DeleteSecretsResponseFromJson(jsonData string) (*DeleteSecretsResponse, err
 		return &res, nil
 	} else {
 		return nil, fmt.Errorf("Error deserializing DeleteSecretsResponse from JSON: " + err.Error())
+	}
+}
+
+type DeleteFolderResponse struct {
+	FolderUid    string `json:"folderUid"`
+	ResponseCode string `json:"responseCode"`
+	ErrorMessage string `json:"errorMessage"`
+}
+
+type DeleteFoldersResponse struct {
+	Folders []DeleteFolderResponse `json:"folders"`
+}
+
+func DeleteFoldersResponseFromJson(jsonData string) (*DeleteFoldersResponse, error) {
+	bytes := []byte(jsonData)
+	res := DeleteFoldersResponse{}
+
+	if err := json.Unmarshal(bytes, &res); err == nil {
+		return &res, nil
+	} else {
+		return nil, fmt.Errorf("Error deserializing DeleteFoldersResponse from JSON: " + err.Error())
 	}
 }
