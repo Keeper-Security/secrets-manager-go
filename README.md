@@ -1,5 +1,7 @@
 # Secrets Management Go SDK
 
+![Go](https://github.com/keeper-security/secrets-manager-go/actions/workflows/test.go.yml/badge.svg)
+
 <p align="center">
   <a href="https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/golang-sdk">View docs</a>
 </p>

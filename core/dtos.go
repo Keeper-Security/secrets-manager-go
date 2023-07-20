@@ -38,6 +38,7 @@ type Record struct {
 	Uid            string
 	folderKeyBytes []byte
 	folderUid      string
+	innerFolderUid string
 	Files          []*KeeperFile
 	Revision       int64
 	IsEditable     bool
@@ -48,6 +49,10 @@ type Record struct {
 
 func (r *Record) FolderUid() string {
 	return r.folderUid
+}
+
+func (r *Record) InnerFolderUid() string {
+	return r.innerFolderUid
 }
 
 func (r *Record) Password() string {
@@ -419,6 +424,11 @@ func NewRecordFromJson(recordDict map[string]interface{}, secretKey []byte, fold
 
 	if uid, ok := recordDict["recordUid"]; ok {
 		record.Uid = strings.TrimSpace(uid.(string))
+	}
+	if innerFolderUid, ok := recordDict["innerFolderUid"]; ok {
+		if ifuid, ok := innerFolderUid.(string); ok {
+			record.innerFolderUid = strings.TrimSpace(ifuid)
+		}
 	}
 	if revision, ok := recordDict["revision"].(float64); ok {
 		record.Revision = int64(revision)
@@ -895,6 +905,7 @@ func NewRecordClone(templateRecordUid string, records []*Record, newRecordUid st
 		Uid:            recordUid,
 		folderKeyBytes: folderKeyBytesCopy,
 		folderUid:      templateRecord.folderUid,
+		innerFolderUid: templateRecord.innerFolderUid,
 		Files:          filesCopy,
 		Revision:       templateRecord.Revision,
 		IsEditable:     templateRecord.IsEditable,
@@ -978,6 +989,7 @@ func NewRecord(templateRecordUid string, records []*Record, newRecordUid string)
 		Uid:            recordUid,
 		folderKeyBytes: folderKeyBytesCopy,
 		folderUid:      templateRecord.folderUid,
+		innerFolderUid: templateRecord.innerFolderUid,
 		Files:          []*KeeperFile{},
 		Revision:       templateRecord.Revision,
 		IsEditable:     templateRecord.IsEditable,
