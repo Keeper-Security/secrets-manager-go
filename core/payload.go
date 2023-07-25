@@ -134,7 +134,7 @@ type CreatePayload struct {
 	FolderUid     string `json:"folderUid"`
 	FolderKey     string `json:"folderKey"`
 	Data          string `json:"data"`
-	SubFolderUid  string `json:"subFolderUid"`
+	SubFolderUid  string `json:"subFolderUid,omitempty"`
 }
 
 func (p *CreatePayload) CreatePayloadToJson() (string, error) {

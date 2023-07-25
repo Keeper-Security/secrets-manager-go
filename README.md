@@ -1,5 +1,7 @@
 # Secrets Management Go SDK
 
+![Go](https://github.com/keeper-security/secrets-manager-go/actions/workflows/test.go.yml/badge.svg)
+
 <p align="center">
   <a href="https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/golang-sdk">View docs</a>
 </p>
@@ -147,6 +149,11 @@ secretsManager.Save(secretToUpdate)
 ```
 
 # Change Log
+
+## 1.6.1
+
+* KSM-450 - Added `folderUid` and `innerFolderUid` to Record
+* KSM-451 - Fix `subFolderUid` crash on empty string value
 
 ## 1.6.0
 
