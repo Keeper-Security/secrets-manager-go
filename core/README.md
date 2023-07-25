@@ -150,6 +150,11 @@ secretsManager.Save(secretToUpdate)
 
 # Change Log
 
+## 1.6.1
+
+* KSM-450 - Added `folderUid` and `innerFolderUid` to Record
+* KSM-451 - Fix `subFolderUid` crash on empty string value
+
 ## 1.6.0
 
 * KSM-414 - Added support for Folders
