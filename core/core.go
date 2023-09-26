@@ -1092,10 +1092,10 @@ func (c *SecretsManager) fetchAndDecryptSecrets(queryOptions QueryOptions) (smr 
 		}
 	}
 	if expiresOn, found := decryptedResponseDict["expiresOn"]; found && expiresOn != nil && fmt.Sprintf("%v", expiresOn) != "" {
-		if i, err := strconv.ParseInt(fmt.Sprintf("%v", expiresOn), 10, 0); err == nil {
-			smResponse.ExpiresOn = i
+		if n, ok := expiresOn.(float64); ok {
+			smResponse.ExpiresOn = (int64)(n)
 		} else {
-			klog.Error("Error parsing ExpiresOn: " + err.Error())
+			klog.Error("Error parsing ExpiresOn - expected float64 number, got ", expiresOn)
 		}
 	}
 	if warnings, found := decryptedResponseDict["warnings"]; found && warnings != nil && fmt.Sprintf("%v", warnings) != "" {
