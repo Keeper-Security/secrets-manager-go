@@ -150,6 +150,10 @@ secretsManager.Save(secretToUpdate)
 
 # Change Log
 
+## 1.6.2
+
+* KSM-467 - Fixed ExpiresOn conversion from UnixTimeMilliseconds.
+
 ## 1.6.1
 
 * KSM-450 - Added `folderUid` and `innerFolderUid` to Record
