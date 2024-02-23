@@ -365,29 +365,17 @@ func (r *Record) GetCustomFieldValueByLabel(fieldLabel string) string {
 }
 
 func NewRecordFromRecordData(recordData *RecordCreate, folder *Folder) *Record {
-	recordKey, err := GenerateRandomBytes(32)
-	if err != nil {
-		return nil
-	}
-	recordUid, err := GenerateRandomBytes(16)
-	if err != nil {
-		return nil
-	}
-
-	return &Record{
-		RecordKeyBytes: recordKey,
-		Uid:            BytesToUrlSafeStr(recordUid),
-		folderKeyBytes: folder.key,
-		folderUid:      folder.uid,
-		recordType:     recordData.RecordType,
-		RawJson:        recordData.ToJson(),
-		RecordDict:     recordData.ToDict(),
-	}
+	return NewRecordFromRecordDataWithUid("", recordData, folder)
 }
 
 func NewRecordFromRecordDataWithUid(recordUid string, recordData *RecordCreate, folder *Folder) *Record {
 	// recordUid must be a base64 url safe encoded string (UID binary length is 16 bytes)
-	ruid := UrlSafeStrToBytes(recordUid)
+	ruid := []byte{}
+	recordUid = strings.TrimSpace(recordUid)
+	if recordUid != "" {
+		ruid = UrlSafeStrToBytes(recordUid)
+	}
+
 	if len(ruid) != 16 {
 		if newUid, err := GenerateRandomBytes(16); err == nil {
 			ruid = newUid
