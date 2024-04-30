@@ -150,6 +150,10 @@ secretsManager.Save(secretToUpdate)
 
 # Change Log
 
+## 1.6.3
+
+* KSM-497 - Expose additional methods to create record from data, options and UID
+
 ## 1.6.2
 
 * KSM-467 - Fixed ExpiresOn conversion from UnixTimeMilliseconds.
