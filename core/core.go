@@ -1448,7 +1448,12 @@ func (c *SecretsManager) CreateSecretWithRecordData(recUid, folderUid string, re
 }
 
 // CreateSecretWithRecordDataAndOptions creates new record using CreateOptions and record data provided
-func (c *SecretsManager) CreateSecretWithRecordDataAndOptions(createOptions CreateOptions, recordData *RecordCreate, folders []*KeeperFolder) (recordUid string, err error) {
+func (c *SecretsManager) CreateSecretWithRecordDataAndOptions(createOptions *CreateOptions, recordData *RecordCreate, folders []*KeeperFolder) (recordUid string, err error) {
+	return c.CreateSecretWithRecordDataUidAndOptions("", createOptions, recordData, folders)
+}
+
+// CreateSecretWithRecordDataUidAndOptions creates new record using the UID, CreateOptions and record data provided
+func (c *SecretsManager) CreateSecretWithRecordDataUidAndOptions(recUid string, createOptions *CreateOptions, recordData *RecordCreate, folders []*KeeperFolder) (recordUid string, err error) {
 	if recordData == nil || recordData.RecordType == "" {
 		return "", errors.New("new record data has to be a valid 'RecordCreate' object")
 	}
@@ -1472,12 +1477,12 @@ func (c *SecretsManager) CreateSecretWithRecordDataAndOptions(createOptions Crea
 	}
 
 	folder := &Folder{key: folderKey, uid: createOptions.FolderUid}
-	record := NewRecordFromRecordData(recordData, folder)
+	record := NewRecordFromRecordDataWithUid(recUid, recordData, folder)
 	if record == nil {
 		return "", fmt.Errorf("failed to create new record from record data: %v", recordData)
 	}
 
-	payload, err := c.prepareCreatePayload(record, createOptions, folderKey)
+	payload, err := c.prepareCreatePayload(record, *createOptions, folderKey)
 	if err != nil {
 		return "", err
 	}
@@ -2030,7 +2035,7 @@ func parseNotationImpl(notation string, legacyMode bool) ([]*NotationSection, er
 
 	// Notation is either plaintext keeper URI format or URL safe base64 string (UTF8)
 	// auto detect format - '/' is not part of base64 URL safe alphabet
-	if strings.Contains(notation, "/") {
+	if !strings.Contains(notation, "/") {
 		if decodedStr := Base64ToStringSafe(notation); len(decodedStr) > 0 {
 			notation = decodedStr
 		}
@@ -2069,9 +2074,6 @@ func parseNotationImpl(notation string, legacyMode bool) ([]*NotationSection, er
 	if !record.IsPresent || !selector.IsPresent {
 		return nil, errors.New("keeper notation URI missing information about the uid, file, field type, or field key")
 	}
-	if footer.IsPresent {
-		return nil, errors.New("keeper notation is invalid - extra characters after last section")
-	}
 	selectorText := ""
 	if selector.IsPresent && selector.Text != nil {
 		selectorText = strings.ToLower(selector.Text.Text)
@@ -2104,6 +2106,9 @@ func parseNotationImpl(notation string, legacyMode bool) ([]*NotationSection, er
 				}
 			}
 		}
+	}
+	if footer.IsPresent {
+		return nil, errors.New("keeper notation is invalid - extra characters after last section")
 	}
 
 	return []*NotationSection{prefix, record, selector, footer}, nil
@@ -2160,7 +2165,7 @@ func (c *SecretsManager) GetNotationResults(notation string) ([]string, error) {
 
 	parsedNotation, err := ParseNotation(notation) // prefix, record, selector, footer
 	if err != nil || len(parsedNotation) < 3 {
-		return nil, fmt.Errorf("invalid notation '%s'", notation)
+		return nil, fmt.Errorf("invalid notation '%s' - error: %s", notation, err.Error())
 	}
 
 	selector := "" // type|title|notes or file|field|custom_field
