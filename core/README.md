@@ -150,6 +150,10 @@ secretsManager.Save(secretToUpdate)
 
 # Change Log
 
+## 1.6.4
+
+* KSM-551 - Stop generating UIDs that start with "-"
+
 ## 1.6.3
 
 * KSM-497 - Expose additional methods to create record from data, options and UID

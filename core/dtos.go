@@ -377,7 +377,7 @@ func NewRecordFromRecordDataWithUid(recordUid string, recordData *RecordCreate, 
 	}
 
 	if len(ruid) != 16 {
-		if newUid, err := GenerateRandomBytes(16); err == nil {
+		if newUid, err := GenerateUidBytes(); err == nil {
 			ruid = newUid
 		} else {
 			return nil
