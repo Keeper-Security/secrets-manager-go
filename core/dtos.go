@@ -998,7 +998,7 @@ func (r *Record) Print() {
 	fmt.Println()
 	fmt.Println("Fields")
 	fmt.Println("------")
-	skipFileds := map[string]struct{}{"fileRef": {}, "oneTimeCode": {}}
+	skipFileds := map[string]struct{}{"fileRef": {}, "oneTimeCode": {}, "otp": {}}
 	if _fields, ok := r.RecordDict["fields"]; ok {
 		if fields, ok := _fields.([]interface{}); ok {
 			for i := range fields {
@@ -1445,11 +1445,13 @@ func convertToKeeperRecordField(fieldData interface{}, validate bool) (interface
 	if fieldData == nil {
 		return nil, errors.New("cannot convert empty field data")
 	}
-	fieldTypes := "|login|password|url|fileRef|oneTimeCode|name" +
-		"|birthDate|date|expirationDate|text|securityQuestion|multiline|email|cardRef" +
-		"|addressRef|pinCode|phone|secret|note|accountNumber|paymentCard|bankAccount" +
-		"|keyPair|host|address|licenseNumber|recordRef|schedule|directoryType|databaseType" +
-		"|pamHostname|pamResources|checkbox|script|passkey|"
+	fieldTypes := "|accountNumber|address|addressRef|appFiller|bankAccount" +
+		"|birthDate|cardRef|checkbox|databaseType|date|directoryType|dropdown" +
+		"|email|expirationDate|fileRef|host|isSSIDHidden|keyPair|licenseNumber" +
+		"|login|multiline|name|note|oneTimeCode|otp|pamHostname|pamRemoteBrowserSettings" +
+		"|pamResources|pamSettings|passkey|password|paymentCard|phone|pinCode|rbiUrl" +
+		"|recordRef|schedule|script|secret|securityQuestion|text|trafficEncryptionSeed" +
+		"|url|wifiEncryption|"
 	if fMap, ok := fieldData.(map[string]interface{}); ok {
 		if fType, found := fMap["type"]; found {
 			if sType, ok := fType.(string); ok && strings.Contains(fieldTypes, "|"+sType+"|") {
