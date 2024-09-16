@@ -701,13 +701,12 @@ func NewAppFillers(value AppFiller) *AppFillers {
 
 type PamRbiConnection struct {
 	Protocol                   string   `json:"protocol,omitempty"`
-	Enabled                    bool     `json:"enabled,omitempty"`
-	UserRecords                []string `json:"user_records,omitempty"`
-	AllowUrlManipulation       bool     `json:"allow-url-manipulation,omitempty"`
-	AllowedUrlPatterns         string   `json:"allowed-url-patterns,omitempty"`
-	AllowedResourceUrlPatterns string   `json:"allowed-resource-url-patterns,omitempty"`
-	HttpCredentialsUid         string   `json:"http-credentials-uid,omitempty"`
-	AutofillConfiguration      string   `json:"autofill-configuration,omitempty"`
+	UserRecords                []string `json:"userRecords,omitempty"`
+	AllowUrlManipulation       bool     `json:"allowUrlManipulation,omitempty"`
+	AllowedUrlPatterns         string   `json:"allowedUrlPatterns,omitempty"`
+	AllowedResourceUrlPatterns string   `json:"allowedResourceUrlPatterns,omitempty"`
+	HttpCredentialsUid         string   `json:"httpCredentialsUid,omitempty"`
+	AutofillConfiguration      string   `json:"autofillConfiguration,omitempty"`
 }
 
 type PamRemoteBrowserSetting struct {
@@ -728,24 +727,20 @@ func NewPamRemoteBrowserSettings(value PamRemoteBrowserSetting) *PamRemoteBrowse
 }
 
 type PamSettingsPortForward struct {
-	Enabled   bool   `json:"enabled,omitempty"`
 	ReusePort bool   `json:"reusePort,omitempty"`
 	Port      string `json:"port,omitempty"`
 }
 
 type PamSettingsConnection struct {
 	Protocol     string   `json:"protocol,omitempty"`
-	Enabled      bool     `json:"enabled,omitempty"`
-	UserRecords  []string `json:"user_records,omitempty"`
+	UserRecords  []string `json:"userRecords,omitempty"`
 	Security     string   `json:"security,omitempty"`
-	IgnoreCert   bool     `json:"ignore-cert,omitempty"`
-	ResizeMethod string   `json:"resize-method,omitempty"`
-	ColorScheme  string   `json:"color-scheme,omitempty"`
+	IgnoreCert   bool     `json:"ignoreCert,omitempty"`
+	ResizeMethod string   `json:"resizeMethod,omitempty"`
+	ColorScheme  string   `json:"colorScheme,omitempty"`
 }
 
 type PamSetting struct {
-	ConfigUid          string                   `json:"configUid,omitempty"`
-	AdminCredentialUid string                   `json:"adminCredentialUid,omitempty"`
 	PortForward        []PamSettingsPortForward `json:"portForward,omitempty"`
 	Connection         []PamSettingsConnection  `json:"connection,omitempty"`
 }
