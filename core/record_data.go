@@ -26,7 +26,6 @@ type Login struct {
 	Value         []string `json:"value,omitempty"`
 }
 
-// Login field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewLogin(value string) *Login {
 	return &Login{
 		KeeperRecordField: KeeperRecordField{Type: "login"},
@@ -51,7 +50,6 @@ type Password struct {
 	Value             []string            `json:"value,omitempty"`
 }
 
-// Password field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewPassword(value string) *Password {
 	return &Password{
 		KeeperRecordField: KeeperRecordField{Type: "password"},
@@ -66,7 +64,6 @@ type Url struct {
 	Value         []string `json:"value,omitempty"`
 }
 
-// Url field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewUrl(value string) *Url {
 	return &Url{
 		KeeperRecordField: KeeperRecordField{Type: "url"},
@@ -74,13 +71,13 @@ func NewUrl(value string) *Url {
 	}
 }
 
+// "file" - obsolete and removed legacy field - "fldt_file": { key: 'file_or_photo', default: "File or Photo" },
 type FileRef struct {
 	KeeperRecordField
 	Required bool     `json:"required,omitempty"`
 	Value    []string `json:"value,omitempty"`
 }
 
-// FileRef field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewFileRef(value string) *FileRef {
 	return &FileRef{
 		KeeperRecordField: KeeperRecordField{Type: "fileRef"},
@@ -95,10 +92,23 @@ type OneTimeCode struct {
 	Value         []string `json:"value,omitempty"`
 }
 
-// OneTimeCode field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewOneTimeCode(value string) *OneTimeCode {
 	return &OneTimeCode{
 		KeeperRecordField: KeeperRecordField{Type: "oneTimeCode"},
+		Value:             []string{value},
+	}
+}
+
+type OneTimePassword struct {
+	KeeperRecordField
+	Required      bool     `json:"required,omitempty"`
+	PrivacyScreen bool     `json:"privacyScreen,omitempty"`
+	Value         []string `json:"value,omitempty"`
+}
+
+func NewOneTimePassword(value string) *OneTimePassword {
+	return &OneTimePassword{
+		KeeperRecordField: KeeperRecordField{Type: "otp"},
 		Value:             []string{value},
 	}
 }
@@ -116,7 +126,6 @@ type Names struct {
 	Value         []Name `json:"value,omitempty"`
 }
 
-// Names field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewNames(value Name) *Names {
 	return &Names{
 		KeeperRecordField: KeeperRecordField{Type: "name"},
@@ -131,7 +140,6 @@ type BirthDate struct {
 	Value         []int64 `json:"value,omitempty"`
 }
 
-// BirthDate field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewBirthDate(value int64) *BirthDate {
 	return &BirthDate{
 		KeeperRecordField: KeeperRecordField{Type: "birthDate"},
@@ -146,7 +154,6 @@ type Date struct {
 	Value         []int64 `json:"value,omitempty"`
 }
 
-// Date field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewDate(value int64) *Date {
 	return &Date{
 		KeeperRecordField: KeeperRecordField{Type: "date"},
@@ -161,7 +168,6 @@ type ExpirationDate struct {
 	Value         []int64 `json:"value,omitempty"`
 }
 
-// ExpirationDate field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewExpirationDate(value int64) *ExpirationDate {
 	return &ExpirationDate{
 		KeeperRecordField: KeeperRecordField{Type: "expirationDate"},
@@ -176,7 +182,6 @@ type Text struct {
 	Value         []string `json:"value,omitempty"`
 }
 
-// Text field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewText(value string) *Text {
 	return &Text{
 		KeeperRecordField: KeeperRecordField{Type: "text"},
@@ -196,7 +201,6 @@ type SecurityQuestions struct {
 	Value         []SecurityQuestion `json:"value,omitempty"`
 }
 
-// SecurityQuestions field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewSecurityQuestions(value SecurityQuestion) *SecurityQuestions {
 	return &SecurityQuestions{
 		KeeperRecordField: KeeperRecordField{Type: "securityQuestion"},
@@ -211,7 +215,6 @@ type Multiline struct {
 	Value         []string `json:"value,omitempty"`
 }
 
-// Multiline field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewMultiline(value string) *Multiline {
 	return &Multiline{
 		KeeperRecordField: KeeperRecordField{Type: "multiline"},
@@ -226,7 +229,6 @@ type Email struct {
 	Value         []string `json:"value,omitempty"`
 }
 
-// Email field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewEmail(value string) *Email {
 	return &Email{
 		KeeperRecordField: KeeperRecordField{Type: "email"},
@@ -241,7 +243,6 @@ type CardRef struct {
 	Value         []string `json:"value,omitempty"`
 }
 
-// CardRef field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewCardRef(value string) *CardRef {
 	return &CardRef{
 		KeeperRecordField: KeeperRecordField{Type: "cardRef"},
@@ -256,7 +257,6 @@ type AddressRef struct {
 	Value         []string `json:"value,omitempty"`
 }
 
-// AddressRef field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewAddressRef(value string) *AddressRef {
 	return &AddressRef{
 		KeeperRecordField: KeeperRecordField{Type: "addressRef"},
@@ -271,7 +271,6 @@ type PinCode struct {
 	Value         []string `json:"value,omitempty"`
 }
 
-// PinCode field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewPinCode(value string) *PinCode {
 	return &PinCode{
 		KeeperRecordField: KeeperRecordField{Type: "pinCode"},
@@ -293,7 +292,6 @@ type Phones struct {
 	Value         []Phone `json:"value,omitempty"`
 }
 
-// Phones field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewPhones(value Phone) *Phones {
 	return &Phones{
 		KeeperRecordField: KeeperRecordField{Type: "phone"},
@@ -308,7 +306,6 @@ type Secret struct {
 	Value         []string `json:"value,omitempty"`
 }
 
-// Secret field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewSecret(value string) *Secret {
 	return &Secret{
 		KeeperRecordField: KeeperRecordField{Type: "secret"},
@@ -323,7 +320,6 @@ type SecureNote struct {
 	Value         []string `json:"value,omitempty"`
 }
 
-// SecureNote field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewSecureNote(value string) *SecureNote {
 	return &SecureNote{
 		KeeperRecordField: KeeperRecordField{Type: "note"},
@@ -338,7 +334,6 @@ type AccountNumber struct {
 	Value         []string `json:"value,omitempty"`
 }
 
-// AccountNumber field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewAccountNumber(value string) *AccountNumber {
 	return &AccountNumber{
 		KeeperRecordField: KeeperRecordField{Type: "accountNumber"},
@@ -359,7 +354,6 @@ type PaymentCards struct {
 	Value         []PaymentCard `json:"value,omitempty"`
 }
 
-// PaymentCards field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewPaymentCards(value PaymentCard) *PaymentCards {
 	return &PaymentCards{
 		KeeperRecordField: KeeperRecordField{Type: "paymentCard"},
@@ -381,7 +375,6 @@ type BankAccounts struct {
 	Value         []BankAccount `json:"value,omitempty"`
 }
 
-// BankAccounts field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewBankAccounts(value BankAccount) *BankAccounts {
 	return &BankAccounts{
 		KeeperRecordField: KeeperRecordField{Type: "bankAccount"},
@@ -401,7 +394,6 @@ type KeyPairs struct {
 	Value         []KeyPair `json:"value,omitempty"`
 }
 
-// KeyPairs field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewKeyPairs(value KeyPair) *KeyPairs {
 	return &KeyPairs{
 		KeeperRecordField: KeeperRecordField{Type: "keyPair"},
@@ -421,7 +413,6 @@ type Hosts struct {
 	Value         []Host `json:"value,omitempty"`
 }
 
-// Hosts field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewHosts(value Host) *Hosts {
 	return &Hosts{
 		KeeperRecordField: KeeperRecordField{Type: "host"},
@@ -445,7 +436,6 @@ type Addresses struct {
 	Value         []Address `json:"value,omitempty"`
 }
 
-// Addresses field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewAddresses(value Address) *Addresses {
 	return &Addresses{
 		KeeperRecordField: KeeperRecordField{Type: "address"},
@@ -460,7 +450,6 @@ type LicenseNumber struct {
 	Value         []string `json:"value,omitempty"`
 }
 
-// LicenseNumber field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewLicenseNumber(value string) *LicenseNumber {
 	return &LicenseNumber{
 		KeeperRecordField: KeeperRecordField{Type: "licenseNumber"},
@@ -474,7 +463,6 @@ type RecordRef struct {
 	Value    []string `json:"value,omitempty"`
 }
 
-// RecordRef field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewRecordRef(value string) *RecordRef {
 	return &RecordRef{
 		KeeperRecordField: KeeperRecordField{Type: "recordRef"},
@@ -483,8 +471,11 @@ func NewRecordRef(value string) *RecordRef {
 }
 
 type Schedule struct {
-	Type          string `json:"type,omitempty"`
-	UtcTime       string `json:"utcTime,omitempty"`
+	Type string `json:"type,omitempty"`
+	Cron string `json:"cron,omitempty"`
+	// UtcTime - replaced by time and tz
+	Time          string `json:"time,omitempty"`
+	Tz            string `json:"tz,omitempty"`
 	Weekday       string `json:"weekday,omitempty"`
 	IntervalCount int    `json:"intervalCount,omitempty"`
 }
@@ -495,7 +486,6 @@ type Schedules struct {
 	Value    []Schedule `json:"value,omitempty"`
 }
 
-// Schedules field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewSchedules(value Schedule) *Schedules {
 	return &Schedules{
 		KeeperRecordField: KeeperRecordField{Type: "schedule"},
@@ -509,7 +499,6 @@ type DirectoryType struct {
 	Value    []string `json:"value,omitempty"`
 }
 
-// DirectoryType field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewDirectoryType(value string) *DirectoryType {
 	return &DirectoryType{
 		KeeperRecordField: KeeperRecordField{Type: "directoryType"},
@@ -523,7 +512,6 @@ type DatabaseType struct {
 	Value    []string `json:"value,omitempty"`
 }
 
-// DatabaseType field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewDatabaseType(value string) *DatabaseType {
 	return &DatabaseType{
 		KeeperRecordField: KeeperRecordField{Type: "databaseType"},
@@ -538,7 +526,6 @@ type PamHostname struct {
 	Value         []Host `json:"value,omitempty"`
 }
 
-// PamHostname field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewPamHostname(value Host) *PamHostname {
 	return &PamHostname{
 		KeeperRecordField: KeeperRecordField{Type: "pamHostname"},
@@ -546,10 +533,19 @@ func NewPamHostname(value Host) *PamHostname {
 	}
 }
 
+type AllowedSettings struct {
+	Connections         bool `json:"connections,omitempty"`
+	PortForwards        bool `json:"portForwards,omitempty"`
+	Rotation            bool `json:"rotation,omitempty"`
+	SessionRecording    bool `json:"sessionRecording,omitempty"`
+	TypescriptRecording bool `json:"typescriptRecording,omitempty"`
+}
+
 type PamResource struct {
-	ControllerUid string   `json:"controllerUid,omitempty"`
-	FolderUid     string   `json:"folderUid,omitempty"`
-	ResourceRef   []string `json:"resourceRef,omitempty"`
+	ControllerUid   string          `json:"controllerUid,omitempty"`
+	FolderUid       string          `json:"folderUid,omitempty"`
+	ResourceRef     []string        `json:"resourceRef,omitempty"`
+	AllowedSettings AllowedSettings `json:"allowedSettings,omitempty"`
 }
 
 type PamResources struct {
@@ -558,7 +554,6 @@ type PamResources struct {
 	Value    []PamResource `json:"value,omitempty"`
 }
 
-// PamResources field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewPamResources(value PamResource) *PamResources {
 	return &PamResources{
 		KeeperRecordField: KeeperRecordField{Type: "pamResources"},
@@ -572,7 +567,6 @@ type Checkbox struct {
 	Value    []bool `json:"value,omitempty"`
 }
 
-// Checkbox field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewCheckbox(value bool) *Checkbox {
 	return &Checkbox{
 		KeeperRecordField: KeeperRecordField{Type: "checkbox"},
@@ -593,7 +587,6 @@ type Scripts struct {
 	Value         []Script `json:"value,omitempty"`
 }
 
-// Scripts field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewScripts(value Script) *Scripts {
 	return &Scripts{
 		KeeperRecordField: KeeperRecordField{Type: "script"},
@@ -627,7 +620,6 @@ type Passkeys struct {
 	Value    []Passkey `json:"value,omitempty"`
 }
 
-// Passkeys field constructor with the single value to eliminate the complexity of the passing List as a value
 func NewPasskeys(value Passkey) *Passkeys {
 	return &Passkeys{
 		KeeperRecordField: KeeperRecordField{Type: "passkey"},
@@ -635,80 +627,247 @@ func NewPasskeys(value Passkey) *Passkeys {
 	}
 }
 
+type IsSsidHidden struct {
+	KeeperRecordField
+	Required bool   `json:"required,omitempty"`
+	Value    []bool `json:"value,omitempty"`
+}
+
+func NewIsSsidHidden(value bool) *IsSsidHidden {
+	return &IsSsidHidden{
+		KeeperRecordField: KeeperRecordField{Type: "isSSIDHidden"},
+		Value:             []bool{value},
+	}
+}
+
+type WifiEncryption struct {
+	KeeperRecordField
+	Required bool     `json:"required,omitempty"`
+	Value    []string `json:"value,omitempty"`
+}
+
+func NewWifiEncryption(value string) *WifiEncryption {
+	return &WifiEncryption{
+		KeeperRecordField: KeeperRecordField{Type: "wifiEncryption"},
+		Value:             []string{value},
+	}
+}
+
+type Dropdown struct {
+	KeeperRecordField
+	Required bool     `json:"required,omitempty"`
+	Value    []string `json:"value,omitempty"`
+}
+
+func NewDropdown(value string) *Dropdown {
+	return &Dropdown{
+		KeeperRecordField: KeeperRecordField{Type: "dropdown"},
+		Value:             []string{value},
+	}
+}
+
+type RbiUrl struct {
+	KeeperRecordField
+	Required bool     `json:"required,omitempty"`
+	Value    []string `json:"value,omitempty"`
+}
+
+func NewRbiUrl(value string) *RbiUrl {
+	return &RbiUrl{
+		KeeperRecordField: KeeperRecordField{Type: "rbiUrl"},
+		Value:             []string{value},
+	}
+}
+
+type AppFiller struct {
+	ApplicationTitle string `json:"applicationTitle,omitempty"`
+	ContentFilter    string `json:"contentFilter,omitempty"`
+	MacroSequence    string `json:"macroSequence,omitempty"`
+}
+
+type AppFillers struct {
+	KeeperRecordField
+	Required      bool        `json:"required,omitempty"`
+	PrivacyScreen bool        `json:"privacyScreen,omitempty"`
+	Value         []AppFiller `json:"value,omitempty"`
+}
+
+func NewAppFillers(value AppFiller) *AppFillers {
+	return &AppFillers{
+		KeeperRecordField: KeeperRecordField{Type: "appFiller"},
+		Value:             []AppFiller{value},
+	}
+}
+
+type PamRbiConnection struct {
+	Protocol                   string   `json:"protocol,omitempty"`
+	UserRecords                []string `json:"userRecords,omitempty"`
+	AllowUrlManipulation       bool     `json:"allowUrlManipulation,omitempty"`
+	AllowedUrlPatterns         string   `json:"allowedUrlPatterns,omitempty"`
+	AllowedResourceUrlPatterns string   `json:"allowedResourceUrlPatterns,omitempty"`
+	HttpCredentialsUid         string   `json:"httpCredentialsUid,omitempty"`
+	AutofillConfiguration      string   `json:"autofillConfiguration,omitempty"`
+}
+
+type PamRemoteBrowserSetting struct {
+	Connection PamRbiConnection `json:"connection,omitempty"`
+}
+
+type PamRemoteBrowserSettings struct {
+	KeeperRecordField
+	Required bool                      `json:"required,omitempty"`
+	Value    []PamRemoteBrowserSetting `json:"value,omitempty"`
+}
+
+func NewPamRemoteBrowserSettings(value PamRemoteBrowserSetting) *PamRemoteBrowserSettings {
+	return &PamRemoteBrowserSettings{
+		KeeperRecordField: KeeperRecordField{Type: "pamRemoteBrowserSettings"},
+		Value:             []PamRemoteBrowserSetting{value},
+	}
+}
+
+type PamSettingsPortForward struct {
+	ReusePort bool   `json:"reusePort,omitempty"`
+	Port      string `json:"port,omitempty"`
+}
+
+type PamSettingsConnection struct {
+	Protocol     string   `json:"protocol,omitempty"`
+	UserRecords  []string `json:"userRecords,omitempty"`
+	Security     string   `json:"security,omitempty"`
+	IgnoreCert   bool     `json:"ignoreCert,omitempty"`
+	ResizeMethod string   `json:"resizeMethod,omitempty"`
+	ColorScheme  string   `json:"colorScheme,omitempty"`
+}
+
+type PamSetting struct {
+	PortForward        []PamSettingsPortForward `json:"portForward,omitempty"`
+	Connection         []PamSettingsConnection  `json:"connection,omitempty"`
+}
+
+type PamSettings struct {
+	KeeperRecordField
+	Required bool         `json:"required,omitempty"`
+	Value    []PamSetting `json:"value,omitempty"`
+}
+
+func NewPamSettings(value PamSetting) *PamSettings {
+	return &PamSettings{
+		KeeperRecordField: KeeperRecordField{Type: "pamSettings"},
+		Value:             []PamSetting{value},
+	}
+}
+
+type TrafficEncryptionSeed struct {
+	KeeperRecordField
+	Required bool     `json:"required,omitempty"`
+	Value    []string `json:"value,omitempty"`
+}
+
+func NewTrafficEncryptionSeed(value string) *TrafficEncryptionSeed {
+	return &TrafficEncryptionSeed{
+		KeeperRecordField: KeeperRecordField{Type: "trafficEncryptionSeed"},
+		Value:             []string{value},
+	}
+}
+
+// List of retired field types:
+// trafficEncryptionKey - replaced by trafficEncryptionSeed
+// pamProvider - deprecated for legacy/internal use only
+// controller - deprecated for legacy/internal use only
+
 // getKeeperRecordField converts fieldData from generic interface{} to strongly typed interface{}
 func getKeeperRecordField(fieldType string, fieldData map[string]interface{}, validate bool) (field interface{}, err error) {
 	if jsonField := DictToJson(fieldData); strings.TrimSpace(jsonField) != "" {
 		switch fieldType {
-		case "login":
-			field = &Login{}
-		case "password":
-			field = &Password{}
-		case "url":
-			field = &Url{}
-		case "fileRef":
-			field = &FileRef{}
-		case "oneTimeCode":
-			field = &OneTimeCode{}
-		case "name":
-			field = &Names{}
-		case "birthDate":
-			field = &BirthDate{}
-		case "date":
-			field = &Date{}
-		case "expirationDate":
-			field = &ExpirationDate{}
-		case "text":
-			field = &Text{}
-		case "securityQuestion":
-			field = &SecurityQuestions{}
-		case "multiline":
-			field = &Multiline{}
-		case "email":
-			field = &Email{}
-		case "cardRef":
-			field = &CardRef{}
-		case "addressRef":
-			field = &AddressRef{}
-		case "pinCode":
-			field = &PinCode{}
-		case "phone":
-			field = &Phones{}
-		case "secret":
-			field = &Secret{}
-		case "note":
-			field = &SecureNote{}
 		case "accountNumber":
 			field = &AccountNumber{}
-		case "paymentCard":
-			field = &PaymentCards{}
-		case "bankAccount":
-			field = &BankAccounts{}
-		case "keyPair":
-			field = &KeyPairs{}
-		case "host":
-			field = &Hosts{}
 		case "address":
 			field = &Addresses{}
+		case "addressRef":
+			field = &AddressRef{}
+		case "appFiller":
+			field = &AppFillers{}
+		case "bankAccount":
+			field = &BankAccounts{}
+		case "birthDate":
+			field = &BirthDate{}
+		case "cardRef":
+			field = &CardRef{}
+		case "checkbox":
+			field = &Checkbox{}
+		case "databaseType":
+			field = &DatabaseType{}
+		case "date":
+			field = &Date{}
+		case "directoryType":
+			field = &DirectoryType{}
+		case "dropdown":
+			field = &Dropdown{}
+		case "email":
+			field = &Email{}
+		case "expirationDate":
+			field = &ExpirationDate{}
+		case "fileRef":
+			field = &FileRef{}
+		case "host":
+			field = &Hosts{}
+		case "isSSIDHidden":
+			field = &IsSsidHidden{}
+		case "keyPair":
+			field = &KeyPairs{}
 		case "licenseNumber":
 			field = &LicenseNumber{}
+		case "login":
+			field = &Login{}
+		case "multiline":
+			field = &Multiline{}
+		case "name":
+			field = &Names{}
+		case "note":
+			field = &SecureNote{}
+		case "oneTimeCode":
+			field = &OneTimeCode{}
+		case "otp":
+			field = &OneTimePassword{}
+		case "pamHostname":
+			field = &PamHostname{}
+		case "pamRemoteBrowserSettings":
+			field = &PamRemoteBrowserSettings{}
+		case "pamResources":
+			field = &PamResources{}
+		case "pamSettings":
+			field = &PamSettings{}
+		case "passkey":
+			field = &Passkeys{}
+		case "password":
+			field = &Password{}
+		case "paymentCard":
+			field = &PaymentCards{}
+		case "phone":
+			field = &Phones{}
+		case "pinCode":
+			field = &PinCode{}
+		case "rbiUrl":
+			field = &RbiUrl{}
 		case "recordRef":
 			field = &RecordRef{}
 		case "schedule":
 			field = &Schedules{}
-		case "directoryType":
-			field = &DirectoryType{}
-		case "databaseType":
-			field = &DatabaseType{}
-		case "pamHostname":
-			field = &PamHostname{}
-		case "pamResources":
-			field = &PamResources{}
-		case "checkbox":
-			field = &Checkbox{}
 		case "script":
 			field = &Scripts{}
-		case "passkey":
-			field = &Passkeys{}
+		case "secret":
+			field = &Secret{}
+		case "securityQuestion":
+			field = &SecurityQuestions{}
+		case "text":
+			field = &Text{}
+		case "trafficEncryptionSeed":
+			field = &TrafficEncryptionSeed{}
+		case "url":
+			field = &Url{}
+		case "wifiEncryption":
+			field = &WifiEncryption{}
 		default:
 			return nil, fmt.Errorf("unable to convert unknown field type %v", fieldType)
 		}
@@ -730,8 +889,9 @@ func IsFieldClass(field interface{}) bool {
 	switch field.(type) {
 	case
 		AccountNumber, *AccountNumber,
-		AddressRef, *AddressRef,
 		Addresses, *Addresses,
+		AddressRef, *AddressRef,
+		AppFillers, *AppFillers,
 		BankAccounts, *BankAccounts,
 		BirthDate, *BirthDate,
 		CardRef, *CardRef,
@@ -739,31 +899,39 @@ func IsFieldClass(field interface{}) bool {
 		DatabaseType, *DatabaseType,
 		Date, *Date,
 		DirectoryType, *DirectoryType,
+		Dropdown, *Dropdown,
 		Email, *Email,
 		ExpirationDate, *ExpirationDate,
 		FileRef, *FileRef,
 		Hosts, *Hosts,
+		IsSsidHidden, *IsSsidHidden,
 		KeyPairs, *KeyPairs,
 		LicenseNumber, *LicenseNumber,
 		Login, *Login,
 		Multiline, *Multiline,
 		Names, *Names,
 		OneTimeCode, *OneTimeCode,
-		Password, *Password,
+		OneTimePassword, *OneTimePassword,
 		PamHostname, *PamHostname,
+		PamRemoteBrowserSettings, *PamRemoteBrowserSettings,
 		PamResources, *PamResources,
+		PamSettings, *PamSettings,
+		Passkeys, *Passkeys,
+		Password, *Password,
 		PaymentCards, *PaymentCards,
 		Phones, *Phones,
 		PinCode, *PinCode,
+		RbiUrl, *RbiUrl,
 		RecordRef, *RecordRef,
 		Schedules, *Schedules,
+		Scripts, *Scripts,
 		Secret, *Secret,
 		SecureNote, *SecureNote,
 		SecurityQuestions, *SecurityQuestions,
 		Text, *Text,
+		TrafficEncryptionSeed, *TrafficEncryptionSeed,
 		Url, *Url,
-		Scripts, *Scripts,
-		Passkeys, *Passkeys:
+		WifiEncryption, *WifiEncryption:
 		return true
 	}
 	return false

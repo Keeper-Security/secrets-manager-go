@@ -649,14 +649,12 @@ func (c *SecretsManager) prepareCreateFolderPayload(createOptions CreateOptions,
 		ClientId:        c.Config.Get(KEY_CLIENT_ID),
 		SharedFolderUid: createOptions.FolderUid,
 		ParentUid:       createOptions.SubFolderUid,
+		FolderUid:       GenerateUid(),
 	}
 
 	if strings.TrimSpace(payload.ClientId) == "" {
 		return nil, fmt.Errorf("unable to update folder - client Id is missing from the configuration")
 	}
-
-	folderUid, _ := GetRandomBytes(16)
-	payload.FolderUid = BytesToUrlSafeStr(folderUid)
 
 	folderKey, _ := GetRandomBytes(32)
 	if encryptedFolderKey, err := EncryptAesCbc(folderKey, sharedFolderKey); err == nil {
