@@ -126,8 +126,27 @@ func GenerateRandomBytes(size int) ([]byte, error) {
 	return GetRandomBytes(size)
 }
 
+func GenerateUidBytes() (bytes []byte, err error) {
+	dash := byte('\xf8') // 1111_1000
+
+	for i := 0; i < 8; i++ {
+		bytes, err = GenerateRandomBytes(16)
+		if err != nil {
+			return nil, err
+		}
+		if dash&bytes[0] != dash {
+			break
+		}
+	}
+	if dash&bytes[0] == dash {
+		bytes[0] = bytes[0] & byte('\x7f') // 0b0111_1111
+	}
+
+	return bytes, nil
+}
+
 func GenerateUid() string {
-	uid, _ := GetRandomBytes(16)
+	uid, _ := GenerateUidBytes()
 	return BytesToUrlSafeStr(uid)
 }
 
