@@ -150,6 +150,10 @@ secretsManager.Save(secretToUpdate)
 
 # Change Log
 
+## 1.6.5
+
+* KSM-565 - Added parsing for KSM tokens with prefix
+
 ## 1.6.4
 
 * KSM-551 - Stop generating UIDs that start with "-"

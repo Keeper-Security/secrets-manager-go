@@ -237,13 +237,17 @@ func (c *SecretsManager) LoadSecretKey() string {
 	// Case 1: Environment Variable
 	currentSecretKey := ""
 	if envSecretKey := strings.TrimSpace(os.Getenv("KSM_TOKEN")); envSecretKey != "" {
+		if _, second, found := strings.Cut(envSecretKey, ":"); found && strings.TrimSpace(second) != "" {
+			envSecretKey = strings.TrimSpace(second)
+		}
 		currentSecretKey = envSecretKey
 		klog.Info("Secret key found in environment variable")
 	}
 
 	// Case 2: Code
-	if currentSecretKey == "" && strings.TrimSpace(c.Token) != "" {
-		currentSecretKey = strings.TrimSpace(c.Token)
+	codeSecretKey := strings.TrimSpace(c.Token)
+	if currentSecretKey == "" && codeSecretKey != "" {
+		currentSecretKey = codeSecretKey
 		klog.Info("Secret key found in code")
 	}
 
