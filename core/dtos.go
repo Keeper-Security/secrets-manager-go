@@ -151,10 +151,8 @@ func (r *Record) Notes() string {
 }
 
 func (r *Record) SetNotes(notes string) {
-	if _, ok := r.RecordDict["notes"]; ok {
-		r.RecordDict["notes"] = notes
-		r.update()
-	}
+	r.RecordDict["notes"] = notes
+	r.update()
 }
 
 func (r *Record) GetFieldsBySection(fieldSectionType FieldSectionFlag) []interface{} {
