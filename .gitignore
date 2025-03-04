@@ -13,3 +13,6 @@
 *.out
 .idea/
 .DS_Store
+
+# Exclude the go.sum file
+go.sum
