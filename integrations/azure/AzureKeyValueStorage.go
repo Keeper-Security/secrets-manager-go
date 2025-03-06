@@ -31,7 +31,12 @@ type AzureConfig struct {
 	TenantID     string
 	ClientID     string
 	ClientSecret string
-	KeyURL       string
+}
+
+type keyDetails struct {
+	keyName    string
+	keyVersion string
+	vaultURL   string
 }
 
 type azureKeyValueStorage struct {
@@ -39,13 +44,12 @@ type azureKeyValueStorage struct {
 	config              map[core.ConfigKey]interface{}
 	lastSavedConfigHash string
 	cryptoClient        *azkeys.Client
-	keyName             string
-	keyVersion          string
+	keyConfig           *keyDetails
 	azureConfig         *AzureConfig
 }
 
 // Creates a new instance of AzureKeyValueStorage.
-func NewAzureKeyValueStorage(configFileLocation string, azSessionConfig *AzureConfig) *azureKeyValueStorage {
+func NewAzureKeyValueStorage(configFileLocation string, keyURL string, azSessionConfig *AzureConfig) *azureKeyValueStorage {
 	if configFileLocation == "" {
 		if envConfigFileLocation, ok := os.LookupEnv("KSM_CONFIG_FILE"); ok {
 			configFileLocation = envConfigFileLocation
@@ -60,14 +64,14 @@ func NewAzureKeyValueStorage(configFileLocation string, azSessionConfig *AzureCo
 		return nil
 	}
 
-	baseURL, keyName, keyVersion, err := fetchKeyDetails(azSessionConfig.KeyURL)
+	keyConfig, err := fetchKeyDetails(keyURL)
 	if err != nil {
 		logger.Errorf("Failed to fetch key details from URL: %v", err)
 		return nil
 	}
 
 	// Create a new Azure Key Vault client.
-	client, err := azkeys.NewClient(baseURL, credential, nil)
+	client, err := azkeys.NewClient(keyConfig.vaultURL, credential, nil)
 	if err != nil {
 		logger.Errorf("Failed to create Azure Key Vault client: %v", err)
 		return nil
@@ -78,8 +82,7 @@ func NewAzureKeyValueStorage(configFileLocation string, azSessionConfig *AzureCo
 		config:              make(map[core.ConfigKey]interface{}),
 		lastSavedConfigHash: "",
 		cryptoClient:        client,
-		keyName:             keyName,
-		keyVersion:          keyVersion,
+		keyConfig:           keyConfig,
 		azureConfig:         azSessionConfig,
 	}
 
@@ -129,7 +132,7 @@ func (s *azureKeyValueStorage) loadConfig() error {
 	}
 
 	if jsonError != nil {
-		configJson, err := decryptBuffer(s.cryptoClient, s.keyName, s.keyVersion, contents)
+		configJson, err := decryptBuffer(s.cryptoClient, s.keyConfig.keyName, s.keyConfig.keyVersion, contents)
 		if err != nil {
 			decryptionError = true
 			logger.Errorf("Failed to decrypt config file: %s", err.Error())
@@ -255,12 +258,12 @@ func (s *azureKeyValueStorage) encryptConfig(config []byte) error {
 	var err error
 
 	if config == nil {
-		blob, err = encryptBuffer(s.cryptoClient, s.keyName, s.keyVersion, []byte("{}"))
+		blob, err = encryptBuffer(s.cryptoClient, s.keyConfig.keyName, s.keyConfig.keyVersion, []byte("{}"))
 		if err != nil {
 			return fmt.Errorf("failed to encrypt empty configuration: %w", err)
 		}
 	} else {
-		blob, err = encryptBuffer(s.cryptoClient, s.keyName, s.keyVersion, config)
+		blob, err = encryptBuffer(s.cryptoClient, s.keyConfig.keyName, s.keyConfig.keyVersion, config)
 		if err != nil {
 			return fmt.Errorf("failed to encrypt configuration: %w", err)
 		}
@@ -272,62 +275,60 @@ func (s *azureKeyValueStorage) encryptConfig(config []byte) error {
 	return nil
 }
 
-func fetchKeyDetails(keyURL string) (string, string, string, error) {
+func fetchKeyDetails(keyURL string) (*keyDetails, error) {
 	if keyURL == "" {
-		return "", "", "", fmt.Errorf("key URL is empty")
+		return nil, fmt.Errorf("key URL is empty")
 	}
 
 	parsedURL, err := url.Parse(keyURL)
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to parse key URL: %v", err)
+		return nil, fmt.Errorf("failed to parse key URL: %v", err)
 	}
 	pathSegments := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
 	if len(pathSegments) < 3 {
-		return "", "", "", fmt.Errorf("invalid key URL format")
+		return nil, fmt.Errorf("invalid key URL format")
 	}
-	vaultURL := fmt.Sprintf("%s://%s", parsedURL.Scheme, parsedURL.Host)
-	keyName := pathSegments[1]
-	keyVersion := pathSegments[2]
-	return vaultURL, keyName, keyVersion, nil
+
+	return &keyDetails{
+		vaultURL:   fmt.Sprintf("%s://%s", parsedURL.Scheme, parsedURL.Host),
+		keyName:    pathSegments[1],
+		keyVersion: pathSegments[2],
+	}, nil
+
 }
 
 // Changes the key used to encrypt/decrypt the configuration.
-func (s *azureKeyValueStorage) ChangeKey(newKeyURL string) (bool, error) {
-	oldState := struct {
-		vaultURL, keyName, keyVersion string
-		cryptoClient                  *azkeys.Client
-	}{
-		s.azureConfig.KeyURL, s.keyName, s.keyVersion, s.cryptoClient,
+func (s *azureKeyValueStorage) ChangeKey(updatedKeyURL string, updatedConfig *AzureConfig) (bool, error) {
+	if updatedConfig == nil {
+		updatedConfig = s.azureConfig
 	}
+
+	oldKeyConfig := s.keyConfig
+	oldCryptoClient := s.cryptoClient
 
 	// Extract the key details like vaultURL, keyname and keyversion from the new key URL `https://<vault-name>.vault.azure.net/keys/<key-name>/<version>`
-	vaultURL, keyName, keyVersion, err := fetchKeyDetails(newKeyURL)
+	newKeyConfig, err := fetchKeyDetails(updatedKeyURL)
 	if err != nil {
-		logger.Errorf("Failed to extract key details from URL '%s': %v", newKeyURL, err)
-		return false, fmt.Errorf("failed to extract key details from URL '%s': %w", newKeyURL, err)
+		logger.Errorf("Failed to extract key details from URL '%s': %v", updatedKeyURL, err)
+		return false, fmt.Errorf("failed to extract key details from URL '%s': %w", updatedKeyURL, err)
 	}
 
-	s.azureConfig.KeyURL = newKeyURL
-	s.keyName = keyName
-	s.keyVersion = keyVersion
-
-	cred, err := fetchCredentials(s.azureConfig)
+	s.keyConfig = newKeyConfig
+	cred, err := fetchCredentials(updatedConfig)
 	if err != nil {
 		return false, err
 	}
 
-	client, err := azkeys.NewClient(vaultURL, cred, nil)
+	client, err := azkeys.NewClient(s.keyConfig.vaultURL, cred, nil)
 	if err != nil {
 		return false, fmt.Errorf("failed to create Azure Key Vault client: %w", err)
 	}
 
 	s.cryptoClient = client
-	if err := s.saveConfig(s.config, true); err != nil {
-		s.azureConfig.KeyURL = oldState.vaultURL
-		s.keyName = oldState.keyName
-		s.keyVersion = oldState.keyVersion
-		s.cryptoClient = oldState.cryptoClient
-		logger.Errorf("Failed to change the key to '%s' for config '%s': %v", newKeyURL, s.configFileLocation, err)
+	if err := s.saveConfig(make(map[core.ConfigKey]interface{}), true); err != nil {
+		s.keyConfig = oldKeyConfig
+		s.cryptoClient = oldCryptoClient
+		logger.Errorf("Failed to change the key to '%s' for config '%s': %v", updatedKeyURL, s.configFileLocation, err)
 		return false, fmt.Errorf("failed to change the key for %s: %w", s.configFileLocation, err)
 	}
 
@@ -347,7 +348,7 @@ func (s *azureKeyValueStorage) DecryptConfig(autosave bool) (string, error) {
 		return "", nil
 	}
 
-	plaintext, err = decryptBuffer(s.cryptoClient, s.keyName, s.keyVersion, ciphertext)
+	plaintext, err = decryptBuffer(s.cryptoClient, s.keyConfig.keyName, s.keyConfig.keyVersion, ciphertext)
 	if err != nil {
 		return "", fmt.Errorf("failed to decrypt config file: %w", err)
 	}
