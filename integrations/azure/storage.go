@@ -1,13 +1,15 @@
 package azurekv
 
 import (
+	"fmt"
+
 	"github.com/keeper-security/secrets-manager-go/core"
-	"github.com/keeper-security/secrets-manager-go/integrations/azure/logger"
+	alog "github.com/keeper-security/secrets-manager-go/core/logger"
 )
 
 func (a *azureKeyValueStorage) ReadStorage() map[string]interface{} {
 	if err := a.loadConfig(); err != nil {
-		logger.Errorf("Failed to load config: %v", err)
+		alog.Error(fmt.Sprintf("Failed to load config: %v", err))
 		return nil
 	}
 	convertedConfig := make(map[string]interface{})
@@ -26,7 +28,7 @@ func (a *azureKeyValueStorage) SaveStorage(updatedConfig map[string]interface{})
 	}
 
 	if err := a.saveConfig(convertedConfig, false); err != nil {
-		logger.Errorf("Failed to save config: %v", err)
+		alog.Error(fmt.Sprintf("Failed to save config: %v", err))
 	}
 }
 
@@ -46,6 +48,7 @@ func (a *azureKeyValueStorage) Set(key core.ConfigKey, value interface{}) map[st
 	for k, v := range a.config {
 		convertedConfig[string(k)] = v
 	}
+
 	a.SaveStorage(convertedConfig)
 	return a.ReadStorage()
 }
@@ -53,11 +56,12 @@ func (a *azureKeyValueStorage) Set(key core.ConfigKey, value interface{}) map[st
 func (a *azureKeyValueStorage) Delete(key core.ConfigKey) map[string]interface{} {
 	if _, found := a.config[key]; found {
 		delete(a.config, key)
-		logger.Debugf("Removed key: %s", string(key))
+		alog.Debug(fmt.Sprintf("Removed key: %s", string(key)))
 		a.saveConfig(a.config, false)
 	} else {
-		logger.Warnf("No key '%s' was found in config", string(key))
+		alog.Warning(fmt.Sprintf("Key not found: %s", string(key)))
 	}
+
 	return a.ReadStorage()
 }
 

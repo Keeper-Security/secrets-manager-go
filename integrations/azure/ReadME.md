@@ -31,6 +31,7 @@ configuration variables can be provided as
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/keeper-security/secrets-manager-go/core"

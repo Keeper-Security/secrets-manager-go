@@ -12,7 +12,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
-	"github.com/keeper-security/secrets-manager-go/integrations/azure/logger"
+	alog "github.com/keeper-security/secrets-manager-go/core/logger"
 )
 
 const (
@@ -21,6 +21,7 @@ const (
 
 // Wrap the AES key using the key provided by the Azure Key Vault.
 func encryptBuffer(azureKvStorageCryptoClient *azkeys.Client, keyName string, keyVersion string, message []byte) ([]byte, error) {
+	alog.Debug("Encrypting buffer")
 	key := make([]byte, 32)
 	if _, err := io.ReadFull(rand.Reader, key); err != nil {
 		return nil, fmt.Errorf("failed to generate random key: %w", err)
@@ -51,7 +52,7 @@ func encryptBuffer(azureKvStorageCryptoClient *azkeys.Client, keyName string, ke
 
 	wrappedKeyResp, err := azureKvStorageCryptoClient.WrapKey(context.Background(), keyName, keyVersion, parameters, nil)
 	if err != nil {
-		logger.Errorf("Failed to wrap key: %v", err)
+		alog.Error(fmt.Sprintf("Failed to wrap key: %v", err))
 		return nil, fmt.Errorf("azure crypto client failed to wrap key: %w", err)
 	}
 
@@ -81,6 +82,7 @@ func uint32ToBytes(n uint32) []byte {
 
 // UnWrap the AES key using the key provided by the Azure Key Vault.
 func decryptBuffer(azureKeyValueStorageCryptoClient *azkeys.Client, keyName string, keyVersion string, cipherText []byte) ([]byte, error) {
+	alog.Debug("Decrypting buffer")
 	if !bytes.HasPrefix(cipherText, []byte(BLOB_HEADER)) {
 		return nil, fmt.Errorf("invalid BLOB_HEADER")
 	}
@@ -107,7 +109,7 @@ func decryptBuffer(azureKeyValueStorageCryptoClient *azkeys.Client, keyName stri
 
 	decryptedKey, err := azureKeyValueStorageCryptoClient.UnwrapKey(context.Background(), keyName, keyVersion, parameters, nil)
 	if err != nil {
-		logger.Errorf("Failed to unwrap key: %v", err)
+		alog.Error(fmt.Sprintf("Failed to unwrap key: %v", err))
 		return nil, fmt.Errorf("azure crypto client failed to unwrap key: %w", err)
 	}
 
@@ -123,7 +125,7 @@ func decryptBuffer(azureKeyValueStorageCryptoClient *azkeys.Client, keyName stri
 
 	plaintext, err := aesGCM.Open(nil, components[1], append(components[3], components[2]...), nil)
 	if err != nil {
-		logger.Errorf("Data tampering detected or decryption failed: %v", err)
+		alog.Critical(fmt.Sprintf("Data tampering detected or decryption failed: %v", err))
 		return nil, err
 	}
 
