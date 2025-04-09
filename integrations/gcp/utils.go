@@ -8,9 +8,12 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"net/http"
 
 	"hash/crc32"
 	"io"
@@ -23,8 +26,16 @@ import (
 )
 
 const (
-	BLOB_HEADER = "\xff\xff"
+	BLOB_HEADER                 = "\xff\xff"
+	cloud_api_url               = "https://www.googleapis.com/auth/cloud-platform"
+	raw_gcp_url                 = "https://cloudkms.googleapis.com/v1/%s"
+	additionalAuthenticatedData = "keeper_auth"
 )
+
+type EncryptionResponse struct {
+	Ciphertext           string `json:"ciphertext"`
+	InitializationVector string `json:"initializationVector"`
+}
 
 // Encrypts the message using a symmetric key stored in Google Cloud KMS.
 func encryptionSymmetric(ctx context.Context, gcpKMClient *kms.KeyManagementClient, keyResourceName string, message []byte) ([]byte, error) {
@@ -259,4 +270,145 @@ func uint32ToBytes(n uint32) []byte {
 	buf := make([]byte, 4)
 	binary.BigEndian.PutUint32(buf, n)
 	return buf
+}
+
+func encryptRawSymmteric(keyResourceName string, message []byte, token string) ([]byte, error) {
+	var blob []byte
+	key := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, key); err != nil {
+		return nil, err
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce := make([]byte, aesGCM.NonceSize())
+	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, err
+	}
+
+	ciphertext := aesGCM.Seal(nil, nonce, message, nil)
+	tag := ciphertext[len(ciphertext)-aesGCM.Overhead():]
+	ciphertext = ciphertext[:len(ciphertext)-aesGCM.Overhead()]
+
+	apiURL := fmt.Sprintf(raw_gcp_url, keyResourceName+":rawEncrypt")
+	payload := fmt.Sprintf(`{
+		"plaintext": "%s",
+		"additionalAuthenticatedData": "%s"
+	}`, base64.StdEncoding.EncodeToString(key), base64.StdEncoding.EncodeToString([]byte(additionalAuthenticatedData)))
+
+	client := &http.Client{}
+	req, err := http.NewRequest("POST", apiURL, strings.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	req.Header.Add("Authorization", "Bearer "+token)
+	req.Header.Add("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to perform HTTP request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("rawEncrypt API call failed with status: %s, response: %s", resp.Status, string(body))
+	}
+
+	var response EncryptionResponse
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	blob = append([]byte{}, []byte(BLOB_HEADER)...)
+	components := [][]byte{
+		[]byte(response.Ciphertext),
+		[]byte(response.InitializationVector),
+		nonce,
+		tag,
+		ciphertext,
+	}
+	// Iterate over the components and append the length and data
+	for _, comp := range components {
+		blob = append(blob, uint32ToBytes(uint32(len(comp)))...)
+		blob = append(blob, comp...)
+	}
+	return blob, nil
+}
+
+func decryptRawSymmteric(keyResourceName string, cipherText []byte, token string) ([]byte, error) {
+	if !bytes.HasPrefix(cipherText, []byte(BLOB_HEADER)) {
+		return nil, fmt.Errorf("invalid BLOB_HEADER")
+	}
+
+	cipherText = cipherText[len(BLOB_HEADER):]
+	components := make([][]byte, 5)
+	for i := range components {
+		compLen := binary.BigEndian.Uint32(cipherText[:4])
+		cipherText = cipherText[4:]
+		components[i] = cipherText[:compLen]
+		cipherText = cipherText[compLen:]
+	}
+
+	apiURL := fmt.Sprintf(raw_gcp_url, keyResourceName+":rawDecrypt")
+	payload := fmt.Sprintf(`{
+		"ciphertext": "%s",
+		"additionalAuthenticatedData": "%s",
+		"initializationVector": "%s"
+	}`, string(components[0]), base64.StdEncoding.EncodeToString([]byte(additionalAuthenticatedData)), string(components[1]))
+
+	client := &http.Client{}
+	req, err := http.NewRequest("POST", apiURL, strings.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	req.Header.Add("Authorization", "Bearer "+token)
+	req.Header.Add("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to perform HTTP request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("rawDecrypt API call failed with status: %s, response: %s", resp.Status, string(body))
+	}
+
+	var response kmspb.RawDecryptResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	block, err := aes.NewCipher(response.Plaintext)
+	if err != nil {
+		return nil, err
+	}
+
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	plaintext, err := aesGCM.Open(nil, components[2], append(components[4], components[3]...), nil)
+	if err != nil {
+		glog.Error(fmt.Sprintf("Data tampering detected or decryption failed: %v", err.Error()))
+		return nil, fmt.Errorf("failed to decrypt message: %w", err)
+	}
+
+	return plaintext, nil
 }

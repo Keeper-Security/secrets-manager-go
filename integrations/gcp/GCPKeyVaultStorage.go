@@ -29,6 +29,7 @@ import (
 	"cloud.google.com/go/kms/apiv1/kmspb"
 	"github.com/keeper-security/secrets-manager-go/core"
 	glog "github.com/keeper-security/secrets-manager-go/core/logger"
+	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 )
 
@@ -77,8 +78,8 @@ func NewGCPKeyVaultStorage(configFileLocation string, keyResourceName string, cr
 		return nil
 	}
 
-	if keyDetails.Purpose != kmspb.CryptoKey_ENCRYPT_DECRYPT && keyDetails.Purpose != kmspb.CryptoKey_ASYMMETRIC_DECRYPT {
-		glog.Error("The given key is not of type ENCRYPT_DECRYPT or ASYMMETRIC_DECRYPT")
+	if keyDetails.Purpose != kmspb.CryptoKey_ENCRYPT_DECRYPT && keyDetails.Purpose != kmspb.CryptoKey_ASYMMETRIC_DECRYPT && keyDetails.Purpose != kmspb.CryptoKey_RAW_ENCRYPT_DECRYPT {
+		glog.Error("The given key is not of type ENCRYPT_DECRYPT or ASYMMETRIC_DECRYPT or RAW_ENCRYPT_DECRYPT")
 		return nil
 	}
 
@@ -150,6 +151,18 @@ func (g *googleCloudKeyVaultStorage) loadConfig() error {
 			if err != nil {
 				decryptionError = true
 				glog.Error("Symmetric decryption failed: %s", err.Error())
+				return fmt.Errorf("failed to decrypt config file %s", g.configFileLocation)
+			}
+		} else if g.keyDetails.Purpose == kmspb.CryptoKey_RAW_ENCRYPT_DECRYPT {
+			token, err := getOAuthToken(ctx, g.credentialFileWithPath)
+			if err != nil {
+				glog.Error("Failed to get OAuth token")
+				return fmt.Errorf("failed to get OAuth token")
+			}
+			decryptData, err = decryptRawSymmteric(g.keyResourceName, contents, *token)
+			if err != nil {
+				decryptionError = true
+				glog.Error(fmt.Sprintf("Raw symmetric decryption failed: %s", err.Error()))
 				return fmt.Errorf("failed to decrypt config file %s", g.configFileLocation)
 			}
 		} else {
@@ -298,6 +311,22 @@ func (g *googleCloudKeyVaultStorage) encryptConfig(ctx context.Context, config [
 		if err := os.WriteFile(g.configFileLocation, ciphertext, 0644); err != nil {
 			return fmt.Errorf("failed to write encrypted config file: %w", err)
 		}
+	} else if g.keyDetails.Purpose == kmspb.CryptoKey_RAW_ENCRYPT_DECRYPT {
+		glog.Debug("Encrypting config using raw symmetric key")
+		token, err := getOAuthToken(ctx, g.credentialFileWithPath)
+		if err != nil {
+			glog.Error("Failed to get OAuth token")
+			return fmt.Errorf("failed to get OAuth token")
+		}
+
+		ciphertext, err := encryptRawSymmteric(g.keyResourceName, config, *token)
+		if err != nil {
+			return err
+		}
+
+		if err := os.WriteFile(g.configFileLocation, ciphertext, 0644); err != nil {
+			return fmt.Errorf("failed to write encrypted config file: %w", err)
+		}
 	} else {
 		glog.Debug("Encrypting config using asymmetric key")
 		ciphertext, err := encryptAsymmetric(ctx, client, g.keyResourceName, config)
@@ -322,6 +351,24 @@ func getGCPKMSClient(credentialFileWithPath string) (*kms.KeyManagementClient, e
 	}
 
 	return client, nil
+}
+
+func getOAuthToken(ctx context.Context, credentialFileWithPath string) (*string, error) {
+	creds, err := os.ReadFile(credentialFileWithPath)
+	if err != nil {
+		glog.Error(fmt.Sprintf("Failed to read credentials file: %v", err.Error()))
+		return nil, fmt.Errorf("failed to read credentials file: %w", err)
+	}
+	config, err := google.JWTConfigFromJSON(creds, cloud_api_url)
+	if err != nil {
+		return nil, err
+	}
+	token, err := config.TokenSource(ctx).Token()
+	if err != nil {
+		return nil, err
+	}
+
+	return &token.AccessToken, nil
 }
 
 func (g *googleCloudKeyVaultStorage) ChangeKey(updatedKeyResourceName string, updatedCredentialFileWithPath string) (bool, error) {
@@ -377,6 +424,17 @@ func (g *googleCloudKeyVaultStorage) DecryptConfig(autosave bool) (string, error
 
 	if g.keyDetails.Purpose == kmspb.CryptoKey_ENCRYPT_DECRYPT {
 		plaintext, err = decryptionSymmetric(ctx, gcpKeyManagementClient, g.keyResourceName, ciphertext)
+		if err != nil {
+			glog.Error(fmt.Sprintf("Failed to decrypt config file: %s", err.Error()))
+			return "", fmt.Errorf("failed to decrypt config file %s", g.configFileLocation)
+		}
+	} else if g.keyDetails.Purpose == kmspb.CryptoKey_RAW_ENCRYPT_DECRYPT {
+		token, err := getOAuthToken(ctx, g.credentialFileWithPath)
+		if err != nil {
+			glog.Error("Failed to get OAuth token")
+			return "", fmt.Errorf("failed to get OAuth token")
+		}
+		plaintext, err = decryptRawSymmteric(g.keyResourceName, ciphertext, *token)
 		if err != nil {
 			glog.Error(fmt.Sprintf("Failed to decrypt config file: %s", err.Error()))
 			return "", fmt.Errorf("failed to decrypt config file %s", g.configFileLocation)
