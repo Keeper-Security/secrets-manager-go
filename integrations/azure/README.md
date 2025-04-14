@@ -13,7 +13,7 @@ Keeper Secrets Manager integrates with Azure Key Vault in order to provide prote
 # Prerequisites
 
 * Supports the Go-Lang Secrets Manager SDK.
-* Requires Azure packages: azure-identity and azure-keyvault-client.
+* Requires Azure packages: azclient, azidentity and azkeys.
 * Works with just RSA key types with `WrapKey` and `UnWrapKey` permissions.
 
 # Setup
