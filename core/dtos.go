@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"path"
@@ -1227,7 +1227,7 @@ func (f *KeeperFile) GetFileData() []byte {
 			fileUrlStr := fmt.Sprintf("%v", fileUrl)
 			if rs, err := http.Get(fileUrlStr); err == nil {
 				defer rs.Body.Close()
-				if fileEncryptedData, err := ioutil.ReadAll(rs.Body); err == nil {
+				if fileEncryptedData, err := io.ReadAll(rs.Body); err == nil {
 					if fileData, err := Decrypt(fileEncryptedData, fileKey); err == nil {
 						f.FileData = fileData
 					}
@@ -1260,7 +1260,7 @@ func (f *KeeperFile) SaveFile(path string, createFolders bool) bool {
 	}
 
 	fileData := f.GetFileData()
-	if err := ioutil.WriteFile(path, fileData, 0644); err != nil {
+	if err := os.WriteFile(path, fileData, 0644); err != nil {
 		klog.Error("error savig file " + err.Error())
 	}
 
@@ -1289,7 +1289,7 @@ func GetFileForUpload(filePath, fileName, fileTitle, mimeType string) (*KeeperFi
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
 	}
-	if fileDataBytes, err := ioutil.ReadFile(filePath); err == nil {
+	if fileDataBytes, err := os.ReadFile(filePath); err == nil {
 		return &KeeperFileUpload{
 			Name:  fileName,
 			Title: fileTitle,

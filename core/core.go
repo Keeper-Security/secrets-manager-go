@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -818,7 +818,7 @@ func (c *SecretsManager) PostFunction(
 	}
 	defer rs.Body.Close()
 
-	rsBody, err := ioutil.ReadAll(rs.Body)
+	rsBody, err := io.ReadAll(rs.Body)
 	return NewKsmHttpResponse(rs.StatusCode, rsBody, rs), err
 }
 
@@ -1334,7 +1334,7 @@ func (c *SecretsManager) fileUpload(url, parameters string, successStatusCode in
 
 	// PostResponse XML is ignored - verify status code for success
 	// rs.Header["Content-Type"][0] == "application/xml"
-	rsBody, err := ioutil.ReadAll(rs.Body)
+	rsBody, err := io.ReadAll(rs.Body)
 	if err != nil {
 		return err
 	}
