@@ -1,3 +1,3 @@
 module github.com/keeper-security/secrets-manager-go/core
 
-go 1.14
+go 1.16
