@@ -429,6 +429,9 @@ func (c *SecretsManager) prepareGetPayload(queryOptions QueryOptions) (res *GetP
 	if len(queryOptions.FoldersFilter) > 0 {
 		payload.RequestedFolders = queryOptions.FoldersFilter
 	}
+	if queryOptions.RequestLinks {
+		payload.RequestLinks = queryOptions.RequestLinks
+	}
 
 	return &payload, nil
 }
