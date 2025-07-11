@@ -41,6 +41,7 @@ type GetPayload struct {
 	PublicKey        string   `json:"publicKey,omitempty"`
 	RequestedRecords []string `json:"requestedRecords"`
 	RequestedFolders []string `json:"requestedFolders"`
+	RequestLinks     bool     `json:"requestLinks,omitempty"`
 }
 
 func (p *GetPayload) GetPayloadToJson() (string, error) {
@@ -329,6 +330,7 @@ func NewKsmHttpResponse(statusCode int, data []byte, httpResponse *http.Response
 type QueryOptions struct {
 	RecordsFilter []string
 	FoldersFilter []string
+	RequestLinks  bool
 }
 
 type CreateOptions struct {

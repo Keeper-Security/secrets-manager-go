@@ -33,6 +33,11 @@ const (
 	FieldTokenBoth = FieldTokenType | FieldTokenLabel
 )
 
+type RecordLink struct {
+	RecordUid string `json:"recordUid"`
+	Data      string `json:"data"`
+}
+
 type Record struct {
 	RecordKeyBytes []byte
 	Uid            string
@@ -45,6 +50,7 @@ type Record struct {
 	recordType     string
 	RawJson        string
 	RecordDict     map[string]interface{}
+	Links          []RecordLink
 }
 
 func (r *Record) FolderUid() string {
@@ -454,6 +460,9 @@ func NewRecordFromJson(recordDict map[string]interface{}, secretKey []byte, fold
 	if recordType, ok := record.RecordDict["type"]; ok {
 		record.recordType = recordType.(string)
 	}
+	if recordLinks, ok := recordDict["links"].([]interface{}); ok {
+		record.Links = parserRecordLinks(recordLinks)
+	}
 
 	// files
 	if recordFiles, ok := recordDict["files"]; ok {
@@ -469,6 +478,25 @@ func NewRecordFromJson(recordDict map[string]interface{}, secretKey []byte, fold
 	}
 
 	return &record
+}
+
+func parserRecordLinks(data []interface{}) []RecordLink {
+	links := []RecordLink{}
+	for _, iLink := range data {
+		if mLink, ok := iLink.(map[string]interface{}); ok {
+			link := RecordLink{}
+			if val, ok := mLink["recordUid"].(string); ok {
+				link.RecordUid = strings.TrimSpace(val)
+			}
+			if val, ok := mLink["data"].(string); ok {
+				link.RecordUid = val
+			}
+			if link.RecordUid != "" {
+				links = append(links, link)
+			}
+		}
+	}
+	return links
 }
 
 // FindFileByTitle finds the first file with matching title
