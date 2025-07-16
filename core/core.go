@@ -468,6 +468,7 @@ func stringsToInterfaces(strs []string) []interface{} {
 	}
 	return interfaces
 }
+
 func (c *SecretsManager) prepareUpdatePayload(record *Record, updateOptions *UpdateOptions) (res *UpdatePayload, err error) {
 	payload := UpdatePayload{
 		ClientVersion: keeperSecretsManagerClientId,
