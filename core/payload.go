@@ -79,6 +79,7 @@ type UpdatePayload struct {
 	Revision        int64                 `json:"revision"`
 	Data            string                `json:"data"`
 	TransactionType UpdateTransactionType `json:"transactionType,omitempty"`
+	LinksToRemove   []string              `json:"links2Remove,omitempty"`
 }
 
 func (p *UpdatePayload) UpdatePayloadToJson() (string, error) {
@@ -269,15 +270,16 @@ func (p *DeleteFolderPayload) DeleteFolderPayloadFromJson(jsonData string) {
 }
 
 type FileUploadPayload struct {
-	ClientVersion   string `json:"clientVersion"`
-	ClientId        string `json:"clientId"`
-	FileRecordUid   string `json:"fileRecordUid"`
-	FileRecordKey   string `json:"fileRecordKey"`
-	FileRecordData  string `json:"fileRecordData"`
-	OwnerRecordUid  string `json:"ownerRecordUid"`
-	OwnerRecordData string `json:"ownerRecordData"`
-	LinkKey         string `json:"linkKey"`
-	FileSize        int    `json:"fileSize"`
+	ClientVersion       string `json:"clientVersion"`
+	ClientId            string `json:"clientId"`
+	FileRecordUid       string `json:"fileRecordUid"`
+	FileRecordKey       string `json:"fileRecordKey"`
+	FileRecordData      string `json:"fileRecordData"`
+	OwnerRecordUid      string `json:"ownerRecordUid"`
+	OwnerRecordData     string `json:"ownerRecordData"`
+	LinkKey             string `json:"linkKey"`
+	FileSize            int    `json:"fileSize"`
+	OwnerRecordRevision int64  `json:"ownerRecordRevision"`
 }
 
 func (p *FileUploadPayload) FileUploadPayloadToJson() (string, error) {
@@ -336,4 +338,9 @@ type QueryOptions struct {
 type CreateOptions struct {
 	FolderUid    string
 	SubFolderUid string
+}
+
+type UpdateOptions struct {
+	TransactionType UpdateTransactionType
+	LinksToRemove   []string
 }
