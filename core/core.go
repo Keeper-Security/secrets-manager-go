@@ -436,7 +436,39 @@ func (c *SecretsManager) prepareGetPayload(queryOptions QueryOptions) (res *GetP
 	return &payload, nil
 }
 
-func (c *SecretsManager) prepareUpdatePayload(record *Record, transactionType UpdateTransactionType) (res *UpdatePayload, err error) {
+// filterStrings removes from source all strings in remove
+func filterStrings(source, remove []string) []string {
+	removeMap := make(map[string]struct{})
+	for _, s := range remove {
+		removeMap[s] = struct{}{}
+	}
+
+	var result []string
+	for _, s := range source {
+		if _, found := removeMap[s]; !found {
+			result = append(result, s)
+		}
+	}
+
+	return result
+}
+
+func toStringSliceAll(input []interface{}) []string {
+	result := make([]string, len(input))
+	for i, v := range input {
+		result[i] = fmt.Sprint(v)
+	}
+	return result
+}
+
+func stringsToInterfaces(strs []string) []interface{} {
+	interfaces := make([]interface{}, len(strs))
+	for i, v := range strs {
+		interfaces[i] = v
+	}
+	return interfaces
+}
+func (c *SecretsManager) prepareUpdatePayload(record *Record, updateOptions *UpdateOptions) (res *UpdatePayload, err error) {
 	payload := UpdatePayload{
 		ClientVersion: keeperSecretsManagerClientId,
 		ClientId:      c.Config.Get(KEY_CLIENT_ID),
@@ -445,6 +477,17 @@ func (c *SecretsManager) prepareUpdatePayload(record *Record, transactionType Up
 	// for update, UID of the record
 	payload.RecordUid = record.Uid
 	payload.Revision = record.Revision
+	if updateOptions != nil && len(updateOptions.LinksToRemove) > 0 {
+		payload.LinksToRemove = updateOptions.LinksToRemove
+		if fileRefs, err := record.GetStandardFieldValue("fileRef", false); err == nil && len(fileRefs) > 0 {
+			refs := toStringSliceAll(fileRefs)
+			newRefs := filterStrings(refs, updateOptions.LinksToRemove)
+			if len(newRefs) != len(fileRefs) {
+				value := stringsToInterfaces(newRefs)
+				record.SetStandardFieldValue("fileRef", value)
+			}
+		}
+	}
 
 	rawJsonBytes := StringToBytes(record.RawJson)
 	if encryptedRawJsonBytes, err := EncryptAesGcm(rawJsonBytes, record.RecordKeyBytes); err == nil {
@@ -453,8 +496,9 @@ func (c *SecretsManager) prepareUpdatePayload(record *Record, transactionType Up
 		return nil, err
 	}
 
-	if transactionType != TransactionTypeNone {
-		payload.TransactionType = transactionType
+	// transaction type - General or Rotation
+	if updateOptions != nil && updateOptions.TransactionType != TransactionTypeNone {
+		payload.TransactionType = updateOptions.TransactionType
 	}
 
 	return &payload, nil
@@ -608,6 +652,7 @@ func (c *SecretsManager) prepareFileUploadPayload(record *Record, file *KeeperFi
 	}
 
 	payload.OwnerRecordUid = record.Uid
+	payload.OwnerRecordRevision = record.Revision
 
 	if exists := record.FieldExists("fields", "fileRef"); !exists {
 		fref := NewFileRef("")
@@ -1201,22 +1246,27 @@ func FindSecretsByTitle(recordTitle string, records []*Record) []*Record {
 }
 
 func (c *SecretsManager) Save(record *Record) (err error) {
-	return c.updateSecret(record, TransactionTypeNone)
+	return c.updateSecret(record, UpdateOptions{TransactionTypeNone, nil})
 }
 
 // SaveBeginTransaction requires corresponding call to CompleteTransaction to either commit or rollback
 func (c *SecretsManager) SaveBeginTransaction(record *Record, transactionType UpdateTransactionType) (err error) {
-	return c.updateSecret(record, transactionType)
+	return c.updateSecret(record, UpdateOptions{transactionType, nil})
 }
 
-func (c *SecretsManager) updateSecret(record *Record, transactionType UpdateTransactionType) (err error) {
+// SaveWithOptions transactions require corresponding call to CompleteTransaction to either commit or rollback
+func (c *SecretsManager) SaveWithOptions(record *Record, updateOptions UpdateOptions) (err error) {
+	return c.updateSecret(record, updateOptions)
+}
+
+func (c *SecretsManager) updateSecret(record *Record, updateOptions UpdateOptions) (err error) {
 	// Save updated secret values
 	if record == nil {
 		return errors.New("update secret - missing record data")
 	}
 
 	klog.Info("Updating record uid: " + record.Uid)
-	payload, err := c.prepareUpdatePayload(record, transactionType)
+	payload, err := c.prepareUpdatePayload(record, &updateOptions)
 	if err != nil {
 		return err
 	}
