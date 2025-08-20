@@ -35,7 +35,8 @@ const (
 
 type RecordLink struct {
 	RecordUid string `json:"recordUid"`
-	Data      string `json:"data"`
+	Data      string `json:"data,omitempty"`
+	Path      string `json:"path,omitempty"`
 }
 
 type Record struct {
@@ -461,7 +462,7 @@ func NewRecordFromJson(recordDict map[string]interface{}, secretKey []byte, fold
 		record.recordType = recordType.(string)
 	}
 	if recordLinks, ok := recordDict["links"].([]interface{}); ok {
-		record.Links = parserRecordLinks(recordLinks)
+		record.Links = parseRecordLinks(recordLinks)
 	}
 
 	// files
@@ -480,7 +481,7 @@ func NewRecordFromJson(recordDict map[string]interface{}, secretKey []byte, fold
 	return &record
 }
 
-func parserRecordLinks(data []interface{}) []RecordLink {
+func parseRecordLinks(data []interface{}) []RecordLink {
 	links := []RecordLink{}
 	for _, iLink := range data {
 		if mLink, ok := iLink.(map[string]interface{}); ok {
@@ -489,7 +490,10 @@ func parserRecordLinks(data []interface{}) []RecordLink {
 				link.RecordUid = strings.TrimSpace(val)
 			}
 			if val, ok := mLink["data"].(string); ok {
-				link.RecordUid = val
+				link.Data = val
+			}
+			if val, ok := mLink["path"].(string); ok {
+				link.Path = val
 			}
 			if link.RecordUid != "" {
 				links = append(links, link)
