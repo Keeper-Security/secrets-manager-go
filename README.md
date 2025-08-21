@@ -150,6 +150,10 @@ secretsManager.Save(secretToUpdate)
 
 # Change Log
 
+## 1.7.0
+
+* KSM-532 - Add proxy support
+
 ## 1.6.4
 
 * KSM-551 - Stop generating UIDs that start with "-"
