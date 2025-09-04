@@ -155,12 +155,8 @@ func NewSecretsManager(options *ClientOptions, arg ...interface{}) *SecretsManag
 		sm.Config.Set(KEY_SERVER_PUBLIC_KEY_ID, defaultKeeperServerPublicKeyId)
 	}
 
-	envProxyUrl := os.Getenv("KSM_PROXY")
-
 	if options != nil && options.ProxyUrl != "" {
 		sm.ProxyUrl = options.ProxyUrl
-	} else if envProxyUrl != "" {
-		sm.ProxyUrl = envProxyUrl
 	}
 
 	if err := sm.init(); err != nil {
