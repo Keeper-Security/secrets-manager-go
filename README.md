@@ -1,4 +1,4 @@
-![keeper-sdk-golang Header](https://github.com/user-attachments/assets/2938453b-17b3-4d9c-9c8c-a8f17671f3c9)
+![Secrets Management Go SDK Header](https://github.com/user-attachments/assets/5e7d706e-b414-42bc-b96b-6e98f6386c6a)
 
 # Keeper Secrets Manager : Go SDK
 
