@@ -1039,8 +1039,25 @@ func (c *SecretsManager) fetchAndDecryptSecrets(queryOptions QueryOptions) (smr 
 		if reflect.TypeOf(recordsResp) == reflect.TypeOf(emptyInterfaceSlice) {
 			for _, r := range recordsResp.([]interface{}) {
 				recordCount++
-				record := NewRecordFromJson(r.(map[string]interface{}), secretKey, "")
-				records = append(records, record)
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							if rMap, ok := r.(map[string]interface{}); ok {
+								if uid, ok := rMap["recordUid"]; ok {
+									klog.Error(fmt.Sprintf("Record %s skipped due to error: %v", uid, r))
+								} else {
+									klog.Error(fmt.Sprintf("Record skipped due to error: %v", r))
+								}
+							} else {
+								klog.Error(fmt.Sprintf("Record skipped due to error: %v", r))
+							}
+						}
+					}()
+					record := NewRecordFromJson(r.(map[string]interface{}), secretKey, "")
+					if record != nil && record.Uid != "" {
+						records = append(records, record)
+					}
+				}()
 			}
 		} else {
 			klog.Error("record JSON is in incorrect format")
@@ -1052,13 +1069,27 @@ func (c *SecretsManager) fetchAndDecryptSecrets(queryOptions QueryOptions) (smr 
 		if reflect.TypeOf(foldersResp) == reflect.TypeOf(emptyInterfaceSlice) {
 			for _, f := range foldersResp.([]interface{}) {
 				folderCount++
-				folder := NewFolderFromJson(f.(map[string]interface{}), secretKey)
-				if f != nil {
-					records = append(records, folder.Records()...)
-					folders = append(folders, folder)
-				} else {
-					klog.Error("error parsing folder JSON: ", f)
-				}
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							if fMap, ok := f.(map[string]interface{}); ok {
+								if uid, ok := fMap["folderUid"]; ok {
+									klog.Error(fmt.Sprintf("Folder %s skipped due to error: %v", uid, r))
+								} else {
+									klog.Error(fmt.Sprintf("Folder skipped due to error: %v", r))
+								}
+							} else {
+								klog.Error(fmt.Sprintf("Folder skipped due to error: %v", r))
+							}
+						}
+					}()
+					folder := NewFolderFromJson(f.(map[string]interface{}), secretKey)
+					if folder != nil {
+						folderRecords := folder.Records()
+						records = append(records, folderRecords...)
+						folders = append(folders, folder)
+					}
+				}()
 			}
 		} else {
 			klog.Error("folder JSON is in incorrect format")
