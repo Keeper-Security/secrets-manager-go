@@ -893,7 +893,7 @@ func (c *SecretsManager) HandleHttpError(rs *http.Response, body []byte, httpErr
 	responseDict := JsonToDict(string(body))
 	if len(responseDict) == 0 {
 		// This is an unknown error, not one of ours, just throw a HTTPError
-		return false, errors.New("HTTPError: " + string(body))
+		return false, fmt.Errorf("HTTPStatus=%v HTTPError: %v", rs.StatusCode, string(body))
 	}
 
 	// Try to get the error from result_code, then from error.
