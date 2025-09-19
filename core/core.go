@@ -9,6 +9,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"reflect"
 	"regexp"
@@ -40,6 +41,9 @@ type ClientOptions struct {
 
 	// Deprecated: Use Token instead. If both are set, hostname from the token takes priority.
 	Hostname string
+
+	// ProxyUrl specifies the URL of the proxy to use
+	ProxyUrl string
 }
 
 type SecretsManager struct {
@@ -49,6 +53,7 @@ type SecretsManager struct {
 	Config         IKeyValueStorage
 	context        **Context
 	cache          ICache
+	ProxyUrl       string
 }
 
 // NewSecretsManager returns new *SecretsManager initialized with the options provided.
@@ -148,6 +153,10 @@ func NewSecretsManager(options *ClientOptions, arg ...interface{}) *SecretsManag
 	} else if _, found := keeperServerPublicKeys[pkid]; !found {
 		klog.Debug(fmt.Sprintf("Public key id %s does not exists, set to default: %s", pkid, defaultKeeperServerPublicKeyId))
 		sm.Config.Set(KEY_SERVER_PUBLIC_KEY_ID, defaultKeeperServerPublicKeyId)
+	}
+
+	if options != nil && options.ProxyUrl != "" {
+		sm.ProxyUrl = options.ProxyUrl
 	}
 
 	if err := sm.init(); err != nil {
@@ -853,12 +862,7 @@ func (c *SecretsManager) PostFunction(
 	rq.Header.Set("Authorization", fmt.Sprintf("Signature %s", BytesToBase64(encryptedPayloadAndSignature.Signature)))
 	// klog.Debug(rq.Header)
 
-	tr := http.DefaultClient.Transport
-	if insecureSkipVerify := !verifySslCerts; insecureSkipVerify {
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify},
-		}
-	}
+	tr := getTransport(c.ProxyUrl, verifySslCerts)
 	client := &http.Client{Transport: tr}
 
 	rs, err := client.Do(rq)
@@ -1368,12 +1372,7 @@ func (c *SecretsManager) fileUpload(url, parameters string, successStatusCode in
 
 	rq.Header.Set("Content-Type", w.FormDataContentType())
 
-	tr := http.DefaultClient.Transport
-	if insecureSkipVerify := !c.VerifySslCerts; insecureSkipVerify {
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify},
-		}
-	}
+	tr := getTransport(c.ProxyUrl, c.VerifySslCerts)
 	client := &http.Client{Transport: tr}
 
 	rs, err := client.Do(rq)
@@ -2429,4 +2428,31 @@ func getRawFieldValue(field map[string]interface{}) []interface{} {
 	}
 
 	return nil
+}
+
+func getTransport(proxyUrl string, VerifySslCerts bool) *http.Transport {
+	var transport *http.Transport
+
+	// If proxyUrl is provided, parse it and set Proxy
+	if proxyUrl != "" {
+		proxyURL, err := url.Parse(proxyUrl)
+		if err != nil {
+			klog.Error(fmt.Sprintf("Error parsing proxy URL: %s", err.Error()))
+		}
+		transport = &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		}
+	} else {
+		transport = &http.Transport{}
+	}
+
+	// If VerifySslCerts is false, set TLSClientConfig to skip certificate verification
+	if !VerifySslCerts {
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
+		}
+		transport.TLSClientConfig.InsecureSkipVerify = true
+	}
+
+	return transport
 }
