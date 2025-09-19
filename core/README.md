@@ -150,6 +150,11 @@ secretsManager.Save(secretToUpdate)
 
 # Change Log
 
+## 1.6.5
+
+* KSM-565 - Added parsing for KSM tokens with prefix
+* KSM-616 - Removed deprecated ioutil dependency and upgarded to Go 1.16
+
 ## 1.6.4
 
 * KSM-551 - Stop generating UIDs that start with "-"

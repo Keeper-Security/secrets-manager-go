@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"path"
@@ -33,6 +33,12 @@ const (
 	FieldTokenBoth = FieldTokenType | FieldTokenLabel
 )
 
+type RecordLink struct {
+	RecordUid string `json:"recordUid"`
+	Data      string `json:"data,omitempty"`
+	Path      string `json:"path,omitempty"`
+}
+
 type Record struct {
 	RecordKeyBytes []byte
 	Uid            string
@@ -45,6 +51,7 @@ type Record struct {
 	recordType     string
 	RawJson        string
 	RecordDict     map[string]interface{}
+	Links          []RecordLink
 }
 
 func (r *Record) FolderUid() string {
@@ -151,10 +158,8 @@ func (r *Record) Notes() string {
 }
 
 func (r *Record) SetNotes(notes string) {
-	if _, ok := r.RecordDict["notes"]; ok {
-		r.RecordDict["notes"] = notes
-		r.update()
-	}
+	r.RecordDict["notes"] = notes
+	r.update()
 }
 
 func (r *Record) GetFieldsBySection(fieldSectionType FieldSectionFlag) []interface{} {
@@ -456,6 +461,9 @@ func NewRecordFromJson(recordDict map[string]interface{}, secretKey []byte, fold
 	if recordType, ok := record.RecordDict["type"]; ok {
 		record.recordType = recordType.(string)
 	}
+	if recordLinks, ok := recordDict["links"].([]interface{}); ok {
+		record.Links = parseRecordLinks(recordLinks)
+	}
 
 	// files
 	if recordFiles, ok := recordDict["files"]; ok {
@@ -471,6 +479,28 @@ func NewRecordFromJson(recordDict map[string]interface{}, secretKey []byte, fold
 	}
 
 	return &record
+}
+
+func parseRecordLinks(data []interface{}) []RecordLink {
+	links := []RecordLink{}
+	for _, iLink := range data {
+		if mLink, ok := iLink.(map[string]interface{}); ok {
+			link := RecordLink{}
+			if val, ok := mLink["recordUid"].(string); ok {
+				link.RecordUid = strings.TrimSpace(val)
+			}
+			if val, ok := mLink["data"].(string); ok {
+				link.Data = val
+			}
+			if val, ok := mLink["path"].(string); ok {
+				link.Path = val
+			}
+			if link.RecordUid != "" {
+				links = append(links, link)
+			}
+		}
+	}
+	return links
 }
 
 // FindFileByTitle finds the first file with matching title
@@ -1229,7 +1259,7 @@ func (f *KeeperFile) GetFileData() []byte {
 			fileUrlStr := fmt.Sprintf("%v", fileUrl)
 			if rs, err := http.Get(fileUrlStr); err == nil {
 				defer rs.Body.Close()
-				if fileEncryptedData, err := ioutil.ReadAll(rs.Body); err == nil {
+				if fileEncryptedData, err := io.ReadAll(rs.Body); err == nil {
 					if fileData, err := Decrypt(fileEncryptedData, fileKey); err == nil {
 						f.FileData = fileData
 					}
@@ -1262,7 +1292,7 @@ func (f *KeeperFile) SaveFile(path string, createFolders bool) bool {
 	}
 
 	fileData := f.GetFileData()
-	if err := ioutil.WriteFile(path, fileData, 0644); err != nil {
+	if err := os.WriteFile(path, fileData, 0644); err != nil {
 		klog.Error("error savig file " + err.Error())
 	}
 
@@ -1291,7 +1321,7 @@ func GetFileForUpload(filePath, fileName, fileTitle, mimeType string) (*KeeperFi
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
 	}
-	if fileDataBytes, err := ioutil.ReadFile(filePath); err == nil {
+	if fileDataBytes, err := os.ReadFile(filePath); err == nil {
 		return &KeeperFileUpload{
 			Name:  fileName,
 			Title: fileTitle,
