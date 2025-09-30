@@ -470,9 +470,20 @@ func NewRecordFromJson(recordDict map[string]interface{}, secretKey []byte, fold
 		if rfSlice, ok := recordFiles.([]interface{}); ok {
 			for i := range rfSlice {
 				if rfMap, ok := rfSlice[i].(map[string]interface{}); ok {
-					if file := NewKeeperFileFromJson(rfMap, record.RecordKeyBytes); file != nil {
-						record.Files = append(record.Files, file)
-					}
+					func() {
+						defer func() {
+							if err := recover(); err != nil {
+								if fileUid, ok := rfMap["fileUid"]; ok {
+									klog.Error(fmt.Sprintf("File %s skipped due to error: %v", fileUid, err))
+								} else {
+									klog.Error(fmt.Sprintf("File skipped due to error: %v", err))
+								}
+							}
+						}()
+						if file := NewKeeperFileFromJson(rfMap, record.RecordKeyBytes); file != nil {
+							record.Files = append(record.Files, file)
+						}
+					}()
 				}
 			}
 		}
@@ -1142,11 +1153,22 @@ func (f *Folder) Records() []*Record {
 	records := []*Record{}
 	if f.folderRecords != nil {
 		for _, r := range f.folderRecords {
-			if record := NewRecordFromJson(r, f.key, f.uid); record.Uid != "" {
-				records = append(records, record)
-			} else {
-				klog.Error("error parsing folder record: ", r)
-			}
+			func() {
+				defer func() {
+					if err := recover(); err != nil {
+						if uid, ok := r["recordUid"]; ok {
+							klog.Error(fmt.Sprintf("Record %s in folder %s skipped due to error: %v", uid, f.uid, err))
+						} else {
+							klog.Error(fmt.Sprintf("Record in folder %s skipped due to error: %v", f.uid, err))
+						}
+					}
+				}()
+				if record := NewRecordFromJson(r, f.key, f.uid); record != nil && record.Uid != "" {
+					records = append(records, record)
+				} else {
+					klog.Error("error parsing folder record: ", r)
+				}
+			}()
 		}
 	}
 	return records
