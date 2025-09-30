@@ -48,7 +48,7 @@ func TestNotOurException(t *testing.T) {
 	// Generic message not specific to the Secrets Manager server.
 	defer func() {
 		if r := recover(); r != nil {
-			expectedMsg := "POST Error: HTTPError: Bad Gateway"
+			expectedMsg := "POST Error: HTTPStatus=502 HTTPError: Bad Gateway"
 			if msg, ok := r.(string); ok && strings.TrimSpace(msg) == expectedMsg {
 				t.Log("Received expected error code 502 'Bad Gateway'")
 			} else {
@@ -64,7 +64,7 @@ func TestNotOurException(t *testing.T) {
 
 	MockResponseQueue.AddMockResponse(NewMockResponse([]byte("Bad Gateway"), 502, nil))
 
-	if _, err := sm.GetSecrets(nil); err != nil && err.Error() == "POST Error: HTTPError: Bad Gateway" {
+	if _, err := sm.GetSecrets(nil); err != nil && err.Error() == "POST Error: HTTPStatus=502 HTTPError: Bad Gateway" {
 		t.Log("Received expected error code 502 'Bad Gateway'")
 	} else {
 		t.Error("did not get correct error message")

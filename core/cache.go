@@ -2,7 +2,6 @@ package core
 
 import (
 	"errors"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,11 +24,11 @@ func (c *fileCache) SaveCachedValue(data []byte) error {
 	if data == nil {
 		data = []byte{}
 	}
-	return ioutil.WriteFile(c.FilePath, data, 0600)
+	return os.WriteFile(c.FilePath, data, 0600)
 }
 
 func (c *fileCache) GetCachedValue() ([]byte, error) {
-	return ioutil.ReadFile(c.FilePath)
+	return os.ReadFile(c.FilePath)
 }
 
 func (c *fileCache) Purge() error {
