@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,7 +35,7 @@ type fileKeyValueStorage struct {
 
 func (f *fileKeyValueStorage) ReadStorage() map[string]interface{} {
 	f.createConfigFileIfMissing()
-	content, err := ioutil.ReadFile(f.ConfigPath)
+	content, err := os.ReadFile(f.ConfigPath)
 	if err != nil {
 		klog.Error("Unable to open file: " + f.ConfigPath + " Error: " + err.Error())
 		return map[string]interface{}{}
@@ -81,7 +80,7 @@ func (f *fileKeyValueStorage) SaveStorage(updatedConfig map[string]interface{}) 
 		klog.Error("Error writing JSON: " + err.Error())
 		return
 	}
-	if err := ioutil.WriteFile(f.ConfigPath, content, 0666); err != nil {
+	if err := os.WriteFile(f.ConfigPath, content, 0666); err != nil {
 		klog.Error("Error writing JSON configuration file: " + err.Error())
 	}
 }

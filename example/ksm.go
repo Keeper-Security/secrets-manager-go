@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"time"
 
@@ -45,7 +44,7 @@ func main() {
 	}
 
 	if len(passwordField) > 0 {
-		newPassword := fmt.Sprintf("New Password from SDK Test - " + time.Now().Format(time.RFC850))
+		newPassword := "New Password from SDK Test - " + time.Now().Format(time.RFC850)
 		recToUpdate.SetPassword(newPassword)
 		if err := sm.Save(recToUpdate); err != nil {
 			klog.Error("error saving record: " + err.Error())

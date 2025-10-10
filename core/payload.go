@@ -41,6 +41,7 @@ type GetPayload struct {
 	PublicKey        string   `json:"publicKey,omitempty"`
 	RequestedRecords []string `json:"requestedRecords"`
 	RequestedFolders []string `json:"requestedFolders"`
+	RequestLinks     bool     `json:"requestLinks,omitempty"`
 }
 
 func (p *GetPayload) GetPayloadToJson() (string, error) {
@@ -78,6 +79,7 @@ type UpdatePayload struct {
 	Revision        int64                 `json:"revision"`
 	Data            string                `json:"data"`
 	TransactionType UpdateTransactionType `json:"transactionType,omitempty"`
+	LinksToRemove   []string              `json:"links2Remove,omitempty"`
 }
 
 func (p *UpdatePayload) UpdatePayloadToJson() (string, error) {
@@ -268,15 +270,16 @@ func (p *DeleteFolderPayload) DeleteFolderPayloadFromJson(jsonData string) {
 }
 
 type FileUploadPayload struct {
-	ClientVersion   string `json:"clientVersion"`
-	ClientId        string `json:"clientId"`
-	FileRecordUid   string `json:"fileRecordUid"`
-	FileRecordKey   string `json:"fileRecordKey"`
-	FileRecordData  string `json:"fileRecordData"`
-	OwnerRecordUid  string `json:"ownerRecordUid"`
-	OwnerRecordData string `json:"ownerRecordData"`
-	LinkKey         string `json:"linkKey"`
-	FileSize        int    `json:"fileSize"`
+	ClientVersion       string `json:"clientVersion"`
+	ClientId            string `json:"clientId"`
+	FileRecordUid       string `json:"fileRecordUid"`
+	FileRecordKey       string `json:"fileRecordKey"`
+	FileRecordData      string `json:"fileRecordData"`
+	OwnerRecordUid      string `json:"ownerRecordUid"`
+	OwnerRecordData     string `json:"ownerRecordData"`
+	LinkKey             string `json:"linkKey"`
+	FileSize            int    `json:"fileSize"`
+	OwnerRecordRevision int64  `json:"ownerRecordRevision"`
 }
 
 func (p *FileUploadPayload) FileUploadPayloadToJson() (string, error) {
@@ -329,9 +332,15 @@ func NewKsmHttpResponse(statusCode int, data []byte, httpResponse *http.Response
 type QueryOptions struct {
 	RecordsFilter []string
 	FoldersFilter []string
+	RequestLinks  bool
 }
 
 type CreateOptions struct {
 	FolderUid    string
 	SubFolderUid string
+}
+
+type UpdateOptions struct {
+	TransactionType UpdateTransactionType
+	LinksToRemove   []string
 }

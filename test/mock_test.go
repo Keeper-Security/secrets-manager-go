@@ -4,7 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -205,7 +205,7 @@ func TestMockHttpServer(t *testing.T) {
 	MockResponseQueue.AddMockResponse(NewMockResponse([]byte("TEST"), 200, nil))
 	if resp, err := http.Get("https://127.0.0.1/test"); err != nil {
 		t.Fatal("failed to send first request:", err)
-	} else if body, err := ioutil.ReadAll(resp.Body); err != nil || string(body) != "TEST" {
+	} else if body, err := io.ReadAll(resp.Body); err != nil || string(body) != "TEST" {
 		t.Fatal("failed to read first request:", err)
 	}
 }
