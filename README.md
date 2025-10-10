@@ -159,6 +159,7 @@ secretsManager.Save(secretToUpdate)
 * KSM-626 - Add GraphSync links
 * KSM-632 - Add links2Remove parameter for files removal
 * KSM-663 - Handle broken records, files, and folders
+* KSM-665 - Add HTTP Status Code to the error messages
 
 ## 1.6.5
 
