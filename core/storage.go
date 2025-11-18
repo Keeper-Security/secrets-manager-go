@@ -81,7 +81,8 @@ func (f *fileKeyValueStorage) SaveStorage(updatedConfig map[string]interface{}) 
 		klog.Error("Error writing JSON: " + err.Error())
 		return
 	}
-	if err := ioutil.WriteFile(f.ConfigPath, content, 0666); err != nil {
+	// Create file with secure permissions (0600) - owner read/write only
+	if err := ioutil.WriteFile(f.ConfigPath, content, 0600); err != nil {
 		klog.Error("Error writing JSON configuration file: " + err.Error())
 	}
 }
@@ -151,7 +152,8 @@ func (f *fileKeyValueStorage) createConfigFileIfMissing() {
 			klog.Error("Error creating folders: " + err.Error())
 		}
 
-		if c, err := os.Create(f.ConfigPath); err == nil {
+		// Create file with secure permissions (0600) - owner read/write only
+		if c, err := os.OpenFile(f.ConfigPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600); err == nil {
 			defer c.Close()
 			if _, err := c.WriteString("{}"); err != nil {
 				klog.Error("Failed to write config content: " + err.Error())
