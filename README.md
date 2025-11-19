@@ -1,4 +1,6 @@
-# Secrets Management Go SDK
+![Secrets Management Go SDK Header](https://github.com/user-attachments/assets/5e7d706e-b414-42bc-b96b-6e98f6386c6a)
+
+# Keeper Secrets Manager : Go SDK
 
 ![Go](https://github.com/keeper-security/secrets-manager-go/actions/workflows/test.go.yml/badge.svg)
 
@@ -6,7 +8,7 @@
   <a href="https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/golang-sdk">View docs</a>
 </p>
 
-This library provides interface to Keeper® Secrets Manager and can be used to access your Keeper vault, read and update existing records, rotate passwords and more. Keeper Secrets Manager is an open source project with contributions from Keeper's engineering team and partners.
+This library provides interface to Keeper Secrets Manager and can be used to access your Keeper vault, read and update existing records, rotate passwords and more. Keeper Secrets Manager is an open source project with contributions from Keeper's engineering team and partners.
 
 ## Features:
 
