@@ -6,9 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"reflect"
 	"regexp"
@@ -40,6 +41,9 @@ type ClientOptions struct {
 
 	// Deprecated: Use Token instead. If both are set, hostname from the token takes priority.
 	Hostname string
+
+	// ProxyUrl specifies the URL of the proxy to use
+	ProxyUrl string
 }
 
 type SecretsManager struct {
@@ -49,6 +53,7 @@ type SecretsManager struct {
 	Config         IKeyValueStorage
 	context        **Context
 	cache          ICache
+	ProxyUrl       string
 }
 
 // NewSecretsManager returns new *SecretsManager initialized with the options provided.
@@ -150,6 +155,10 @@ func NewSecretsManager(options *ClientOptions, arg ...interface{}) *SecretsManag
 		sm.Config.Set(KEY_SERVER_PUBLIC_KEY_ID, defaultKeeperServerPublicKeyId)
 	}
 
+	if options != nil && options.ProxyUrl != "" {
+		sm.ProxyUrl = options.ProxyUrl
+	}
+
 	if err := sm.init(); err != nil {
 		klog.Error(err.Error())
 		return nil
@@ -237,13 +246,17 @@ func (c *SecretsManager) LoadSecretKey() string {
 	// Case 1: Environment Variable
 	currentSecretKey := ""
 	if envSecretKey := strings.TrimSpace(os.Getenv("KSM_TOKEN")); envSecretKey != "" {
+		if _, second, found := strings.Cut(envSecretKey, ":"); found && strings.TrimSpace(second) != "" {
+			envSecretKey = strings.TrimSpace(second)
+		}
 		currentSecretKey = envSecretKey
 		klog.Info("Secret key found in environment variable")
 	}
 
 	// Case 2: Code
-	if currentSecretKey == "" && strings.TrimSpace(c.Token) != "" {
-		currentSecretKey = strings.TrimSpace(c.Token)
+	codeSecretKey := strings.TrimSpace(c.Token)
+	if currentSecretKey == "" && codeSecretKey != "" {
+		currentSecretKey = codeSecretKey
 		klog.Info("Secret key found in code")
 	}
 
@@ -425,11 +438,47 @@ func (c *SecretsManager) prepareGetPayload(queryOptions QueryOptions) (res *GetP
 	if len(queryOptions.FoldersFilter) > 0 {
 		payload.RequestedFolders = queryOptions.FoldersFilter
 	}
+	if queryOptions.RequestLinks {
+		payload.RequestLinks = queryOptions.RequestLinks
+	}
 
 	return &payload, nil
 }
 
-func (c *SecretsManager) prepareUpdatePayload(record *Record, transactionType UpdateTransactionType) (res *UpdatePayload, err error) {
+// filterStrings removes from source all strings in remove
+func filterStrings(source, remove []string) []string {
+	removeMap := make(map[string]struct{})
+	for _, s := range remove {
+		removeMap[s] = struct{}{}
+	}
+
+	var result []string
+	for _, s := range source {
+		if _, found := removeMap[s]; !found {
+			result = append(result, s)
+		}
+	}
+
+	return result
+}
+
+func toStringSliceAll(input []interface{}) []string {
+	result := make([]string, len(input))
+	for i, v := range input {
+		result[i] = fmt.Sprint(v)
+	}
+	return result
+}
+
+func stringsToInterfaces(strs []string) []interface{} {
+	interfaces := make([]interface{}, len(strs))
+	for i, v := range strs {
+		interfaces[i] = v
+	}
+	return interfaces
+}
+
+func (c *SecretsManager) prepareUpdatePayload(record *Record, updateOptions *UpdateOptions) (res *UpdatePayload, err error) {
 	payload := UpdatePayload{
 		ClientVersion: keeperSecretsManagerClientId,
 		ClientId:      c.Config.Get(KEY_CLIENT_ID),
@@ -438,6 +487,17 @@ func (c *SecretsManager) prepareUpdatePayload(record *Record, transactionType Up
 	// for update, UID of the record
 	payload.RecordUid = record.Uid
 	payload.Revision = record.Revision
+	if updateOptions != nil && len(updateOptions.LinksToRemove) > 0 {
+		payload.LinksToRemove = updateOptions.LinksToRemove
+		if fileRefs, err := record.GetStandardFieldValue("fileRef", false); err == nil && len(fileRefs) > 0 {
+			refs := toStringSliceAll(fileRefs)
+			newRefs := filterStrings(refs, updateOptions.LinksToRemove)
+			if len(newRefs) != len(fileRefs) {
+				value := stringsToInterfaces(newRefs)
+				record.SetStandardFieldValue("fileRef", value)
+			}
+		}
+	}
 
 	rawJsonBytes := StringToBytes(record.RawJson)
 	if encryptedRawJsonBytes, err := EncryptAesGcm(rawJsonBytes, record.RecordKeyBytes); err == nil {
@@ -446,8 +506,9 @@ func (c *SecretsManager) prepareUpdatePayload(record *Record, transactionType Up
 		return nil, err
 	}
 
-	if transactionType != TransactionTypeNone {
-		payload.TransactionType = transactionType
+	// transaction type - General or Rotation
+	if updateOptions != nil && updateOptions.TransactionType != TransactionTypeNone {
+		payload.TransactionType = updateOptions.TransactionType
 	}
 
 	return &payload, nil
@@ -601,6 +662,7 @@ func (c *SecretsManager) prepareFileUploadPayload(record *Record, file *KeeperFi
 	}
 
 	payload.OwnerRecordUid = record.Uid
+	payload.OwnerRecordRevision = record.Revision
 
 	if exists := record.FieldExists("fields", "fileRef"); !exists {
 		fref := NewFileRef("")
@@ -800,12 +862,7 @@ func (c *SecretsManager) PostFunction(
 	rq.Header.Set("Authorization", fmt.Sprintf("Signature %s", BytesToBase64(encryptedPayloadAndSignature.Signature)))
 	// klog.Debug(rq.Header)
 
-	tr := http.DefaultClient.Transport
-	if insecureSkipVerify := !verifySslCerts; insecureSkipVerify {
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify},
-		}
-	}
+	tr := getTransport(c.ProxyUrl, verifySslCerts)
 	client := &http.Client{Transport: tr}
 
 	rs, err := client.Do(rq)
@@ -814,7 +871,7 @@ func (c *SecretsManager) PostFunction(
 	}
 	defer rs.Body.Close()
 
-	rsBody, err := ioutil.ReadAll(rs.Body)
+	rsBody, err := io.ReadAll(rs.Body)
 	return NewKsmHttpResponse(rs.StatusCode, rsBody, rs), err
 }
 
@@ -840,7 +897,7 @@ func (c *SecretsManager) HandleHttpError(rs *http.Response, body []byte, httpErr
 	responseDict := JsonToDict(string(body))
 	if len(responseDict) == 0 {
 		// This is an unknown error, not one of ours, just throw a HTTPError
-		return false, errors.New("HTTPError: " + string(body))
+		return false, fmt.Errorf("HTTPStatus=%v HTTPError: %v", rs.StatusCode, string(body))
 	}
 
 	// Try to get the error from result_code, then from error.
@@ -1039,8 +1096,25 @@ func (c *SecretsManager) fetchAndDecryptSecrets(queryOptions QueryOptions) (smr 
 		if reflect.TypeOf(recordsResp) == reflect.TypeOf(emptyInterfaceSlice) {
 			for _, r := range recordsResp.([]interface{}) {
 				recordCount++
-				record := NewRecordFromJson(r.(map[string]interface{}), secretKey, "")
-				records = append(records, record)
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							if rMap, ok := r.(map[string]interface{}); ok {
+								if uid, ok := rMap["recordUid"]; ok {
+									klog.Error(fmt.Sprintf("Record %s skipped due to error: %v", uid, r))
+								} else {
+									klog.Error(fmt.Sprintf("Record skipped due to error: %v", r))
+								}
+							} else {
+								klog.Error(fmt.Sprintf("Record skipped due to error: %v", r))
+							}
+						}
+					}()
+					record := NewRecordFromJson(r.(map[string]interface{}), secretKey, "")
+					if record != nil && record.Uid != "" {
+						records = append(records, record)
+					}
+				}()
 			}
 		} else {
 			klog.Error("record JSON is in incorrect format")
@@ -1052,13 +1126,27 @@ func (c *SecretsManager) fetchAndDecryptSecrets(queryOptions QueryOptions) (smr 
 		if reflect.TypeOf(foldersResp) == reflect.TypeOf(emptyInterfaceSlice) {
 			for _, f := range foldersResp.([]interface{}) {
 				folderCount++
-				folder := NewFolderFromJson(f.(map[string]interface{}), secretKey)
-				if f != nil {
-					records = append(records, folder.Records()...)
-					folders = append(folders, folder)
-				} else {
-					klog.Error("error parsing folder JSON: ", f)
-				}
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							if fMap, ok := f.(map[string]interface{}); ok {
+								if uid, ok := fMap["folderUid"]; ok {
+									klog.Error(fmt.Sprintf("Folder %s skipped due to error: %v", uid, r))
+								} else {
+									klog.Error(fmt.Sprintf("Folder skipped due to error: %v", r))
+								}
+							} else {
+								klog.Error(fmt.Sprintf("Folder skipped due to error: %v", r))
+							}
+						}
+					}()
+					folder := NewFolderFromJson(f.(map[string]interface{}), secretKey)
+					if folder != nil {
+						folderRecords := folder.Records()
+						records = append(records, folderRecords...)
+						folders = append(folders, folder)
+					}
+				}()
 			}
 		} else {
 			klog.Error("folder JSON is in incorrect format")
@@ -1194,22 +1282,27 @@ func FindSecretsByTitle(recordTitle string, records []*Record) []*Record {
 }
 
 func (c *SecretsManager) Save(record *Record) (err error) {
-	return c.updateSecret(record, TransactionTypeNone)
+	return c.updateSecret(record, UpdateOptions{TransactionTypeNone, nil})
 }
 
 // SaveBeginTransaction requires corresponding call to CompleteTransaction to either commit or rollback
 func (c *SecretsManager) SaveBeginTransaction(record *Record, transactionType UpdateTransactionType) (err error) {
-	return c.updateSecret(record, transactionType)
+	return c.updateSecret(record, UpdateOptions{transactionType, nil})
 }
 
-func (c *SecretsManager) updateSecret(record *Record, transactionType UpdateTransactionType) (err error) {
+// SaveWithOptions transactions require corresponding call to CompleteTransaction to either commit or rollback
+func (c *SecretsManager) SaveWithOptions(record *Record, updateOptions UpdateOptions) (err error) {
+	return c.updateSecret(record, updateOptions)
+}
+
+func (c *SecretsManager) updateSecret(record *Record, updateOptions UpdateOptions) (err error) {
 	// Save updated secret values
 	if record == nil {
 		return errors.New("update secret - missing record data")
 	}
 
 	klog.Info("Updating record uid: " + record.Uid)
-	payload, err := c.prepareUpdatePayload(record, transactionType)
+	payload, err := c.prepareUpdatePayload(record, &updateOptions)
 	if err != nil {
 		return err
 	}
@@ -1310,12 +1403,7 @@ func (c *SecretsManager) fileUpload(url, parameters string, successStatusCode in
 
 	rq.Header.Set("Content-Type", w.FormDataContentType())
 
-	tr := http.DefaultClient.Transport
-	if insecureSkipVerify := !c.VerifySslCerts; insecureSkipVerify {
-		tr = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify},
-		}
-	}
+	tr := getTransport(c.ProxyUrl, c.VerifySslCerts)
 	client := &http.Client{Transport: tr}
 
 	rs, err := client.Do(rq)
@@ -1330,7 +1418,7 @@ func (c *SecretsManager) fileUpload(url, parameters string, successStatusCode in
 
 	// PostResponse XML is ignored - verify status code for success
 	// rs.Header["Content-Type"][0] == "application/xml"
-	rsBody, err := ioutil.ReadAll(rs.Body)
+	rsBody, err := io.ReadAll(rs.Body)
 	if err != nil {
 		return err
 	}
@@ -2371,4 +2459,31 @@ func getRawFieldValue(field map[string]interface{}) []interface{} {
 	}
 
 	return nil
+}
+
+func getTransport(proxyUrl string, VerifySslCerts bool) *http.Transport {
+	var transport *http.Transport
+
+	// If proxyUrl is provided, parse it and set Proxy
+	if proxyUrl != "" {
+		proxyURL, err := url.Parse(proxyUrl)
+		if err != nil {
+			klog.Error(fmt.Sprintf("Error parsing proxy URL: %s", err.Error()))
+		}
+		transport = &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		}
+	} else {
+		transport = &http.Transport{}
+	}
+
+	// If VerifySslCerts is false, set TLSClientConfig to skip certificate verification
+	if !VerifySslCerts {
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
+		}
+		transport.TLSClientConfig.InsecureSkipVerify = true
+	}
+
+	return transport
 }

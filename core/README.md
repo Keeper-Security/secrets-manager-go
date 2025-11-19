@@ -150,6 +150,22 @@ secretsManager.Save(secretToUpdate)
 
 # Change Log
 
+## 1.7.0
+
+* KSM-532 - Add proxy support
+* KSM-565 - Add parsing for KSM tokens with prefix
+* KSM-583 - Fix SetNotes
+* KSM-616 - Remove deprecated ioutil dependency
+* KSM-626 - Add GraphSync links
+* KSM-632 - Add links2Remove parameter for files removal
+* KSM-663 - Handle broken records, files, and folders
+* KSM-665 - Add HTTP Status Code to the error messages
+
+## 1.6.5
+
+* KSM-565 - Added parsing for KSM tokens with prefix
+* KSM-616 - Removed deprecated ioutil dependency and upgarded to Go 1.16
+
 ## 1.6.4
 
 * KSM-551 - Stop generating UIDs that start with "-"

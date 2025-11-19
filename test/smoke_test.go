@@ -1,7 +1,6 @@
 package test
 
 import (
-	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
@@ -15,12 +14,12 @@ func TestTheWorks(t *testing.T) {
 	defer ResetMockResponseQueue()
 
 	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", "", ""))
-	if f, err := ioutil.TempFile("", ""); err == nil {
+	if f, err := os.CreateTemp("", ""); err == nil {
 		defer func() {
 			f.Close()
 			os.Remove(f.Name())
 		}()
-		if err := ioutil.WriteFile(f.Name(), []byte(configJson), 0644); err == nil {
+		if err := os.WriteFile(f.Name(), []byte(configJson), 0644); err == nil {
 			config := ksm.NewFileKeyValueStorage(f.Name())
 			sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}, Ctx)
 
