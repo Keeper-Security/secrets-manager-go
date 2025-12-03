@@ -751,6 +751,7 @@ func (r *Record) InsertField(section string, field interface{}) error {
 		return fmt.Errorf("section '%s' not found", section)
 	}
 
+	r.update()
 	return nil
 }
 
@@ -789,6 +790,7 @@ func (r *Record) UpdateField(section string, field interface{}) error {
 						for key, val := range fieldMap {
 							fmap[key] = val
 						}
+						r.update()
 						return nil
 					}
 				}
