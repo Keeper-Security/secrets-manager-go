@@ -1908,7 +1908,16 @@ func (c *SecretsManager) GetNotation(notation string) (fieldValue []interface{},
 		if secrets, err := c.GetSecrets([]string{recordToken}); err != nil {
 			return result, err
 		} else if len(secrets) > 1 {
-			return result, fmt.Errorf("notation error - found multiple records with same UID '%s'", recordToken)
+			// Remove duplicate UIDs - shortcuts/linked records both shared to same KSM App
+			seen := make(map[string]bool)
+			uniqueSecrets := []*Record{}
+			for _, s := range secrets {
+				if !seen[s.Uid] {
+					seen[s.Uid] = true
+					uniqueSecrets = append(uniqueSecrets, s)
+				}
+			}
+			records = uniqueSecrets
 		} else {
 			records = secrets
 		}
@@ -2276,7 +2285,16 @@ func (c *SecretsManager) GetNotationResults(notation string) ([]string, error) {
 		if secrets, err := c.GetSecrets([]string{recordToken}); err != nil {
 			return nil, err
 		} else if len(secrets) > 1 {
-			return nil, fmt.Errorf("notation error - found multiple records with same UID '%s'", recordToken)
+			// Remove duplicate UIDs - shortcuts/linked records both shared to same KSM App
+			seen := make(map[string]bool)
+			uniqueSecrets := []*Record{}
+			for _, s := range secrets {
+				if !seen[s.Uid] {
+					seen[s.Uid] = true
+					uniqueSecrets = append(uniqueSecrets, s)
+				}
+			}
+			records = uniqueSecrets
 		} else {
 			records = secrets
 		}
