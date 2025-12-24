@@ -1,7 +1,6 @@
 package test
 
 import (
-	"os"
 	"testing"
 
 	ksm "github.com/keeper-security/secrets-manager-go/core"

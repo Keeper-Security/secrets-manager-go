@@ -23,7 +23,7 @@ func TestOurException(t *testing.T) {
 
 	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", "", ""))
 	config := ksm.NewMemoryKeyValueStorage(configJson)
-	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config})
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}, Ctx)
 
 	// Make the error message
 	errorJson := `
@@ -60,7 +60,7 @@ func TestNotOurException(t *testing.T) {
 
 	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", "", ""))
 	config := ksm.NewMemoryKeyValueStorage(configJson)
-	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config})
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}, Ctx)
 
 	MockResponseQueue.AddMockResponse(NewMockResponse([]byte("Bad Gateway"), 502, nil))
 
