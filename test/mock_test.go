@@ -24,11 +24,13 @@ var (
 	MockResponseQueue mockResponseQueue = mockResponseQueue{}
 	context           *core.Context     = &core.Context{}
 	Ctx               **core.Context    = &context
+	mockTransport     http.RoundTripper // Preserve mock transport across resets
 )
 
 func ResetMockResponseQueue() {
 	MockResponseQueue = mockResponseQueue{}
-	context = &core.Context{}
+	// Preserve Transport when resetting context
+	context = &core.Context{Transport: mockTransport}
 	Ctx = &context
 }
 
@@ -38,7 +40,13 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalln("failed to parse httptest.Server URL:", err)
 	}
-	http.DefaultClient.Transport = RewriteTransport{URL: u}
+
+	// Inject mock transport into Context for test isolation
+	mockTransport = RewriteTransport{URL: u}
+	context.Transport = mockTransport
+
+	// Keep DefaultClient.Transport for backward compatibility with any direct http calls
+	http.DefaultClient.Transport = mockTransport
 
 	retCode := m.Run()
 
@@ -196,7 +204,13 @@ func NewMockHttpServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatal("failed to parse httptest.Server URL:", err)
 	}
-	http.DefaultClient.Transport = RewriteTransport{URL: u}
+
+	// Inject mock transport into Context for test isolation
+	mockTransport = RewriteTransport{URL: u}
+	context.Transport = mockTransport
+
+	// Keep DefaultClient.Transport for backward compatibility
+	http.DefaultClient.Transport = mockTransport
 	return s
 }
 

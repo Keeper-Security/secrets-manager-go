@@ -331,6 +331,10 @@ func (c *SecretsManager) PrepareContext() *Context {
 		ClientId:        clientIdBytes,
 		ClientKey:       secretKey,
 	}
+	// Preserve Transport from existing context if it exists
+	if c.context != nil && *c.context != nil {
+		context.Transport = (*c.context).Transport
+	}
 	if c.context != nil {
 		*c.context = context
 	}
@@ -862,7 +866,13 @@ func (c *SecretsManager) PostFunction(
 	rq.Header.Set("Authorization", fmt.Sprintf("Signature %s", BytesToBase64(encryptedPayloadAndSignature.Signature)))
 	// klog.Debug(rq.Header)
 
-	tr := getTransport(c.ProxyUrl, verifySslCerts)
+	// Use Context.Transport for test mocking, otherwise use getTransport
+	var tr http.RoundTripper
+	if c.context != nil && *c.context != nil && (*c.context).Transport != nil {
+		tr = (*c.context).Transport
+	} else {
+		tr = getTransport(c.ProxyUrl, verifySslCerts)
+	}
 	client := &http.Client{Transport: tr}
 
 	rs, err := client.Do(rq)
@@ -1403,7 +1413,13 @@ func (c *SecretsManager) fileUpload(url, parameters string, successStatusCode in
 
 	rq.Header.Set("Content-Type", w.FormDataContentType())
 
-	tr := getTransport(c.ProxyUrl, c.VerifySslCerts)
+	// Use Context.Transport for test mocking, otherwise use getTransport
+	var tr http.RoundTripper
+	if c.context != nil && *c.context != nil && (*c.context).Transport != nil {
+		tr = (*c.context).Transport
+	} else {
+		tr = getTransport(c.ProxyUrl, c.VerifySslCerts)
+	}
 	client := &http.Client{Transport: tr}
 
 	rs, err := client.Do(rq)

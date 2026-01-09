@@ -162,6 +162,8 @@ secretsManager.Save(secretToUpdate)
 * KSM-632 - Add links2Remove parameter for files removal
 * KSM-663 - Handle broken records, files, and folders
 * KSM-665 - Add HTTP Status Code to the error messages
+* KSM-701 - Write config files with secure permissions (0600)
+* KSM-745 - Add transmission public key #18 for Gov Cloud Dev support
 
 ## 1.6.5
 

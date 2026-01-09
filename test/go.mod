@@ -3,3 +3,4 @@ module github.com/keeper-security/secrets-manager-go/core/test
 go 1.16
 
 require github.com/keeper-security/secrets-manager-go/core v1.6.4
+replace github.com/keeper-security/secrets-manager-go/core => ../core

@@ -11,6 +11,7 @@ type Context struct {
 	TransmissionKey TransmissionKey
 	ClientId        []byte
 	ClientKey       []byte
+	Transport       http.RoundTripper // Optional: for test mocking and custom transports
 }
 
 func NewContext(transmissionKey TransmissionKey, clientId []byte, clientKey []byte) *Context {
