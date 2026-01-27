@@ -1,0 +1,24 @@
+name: Publish Go SDK to pkg.go.dev
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish release (uncheck to build/test only)'
+        required: false
+        default: 'true'
+        type: boolean
+      version_tag:
+        description: 'Version tag (e.g., v1.7.0, leave empty to auto-detect)'
+        required: false
+        type: string
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Placeholder
+        run: |
+          echo "This is a placeholder workflow on master branch."
+          echo "The full implementation exists on release branches."
+          echo "Run this workflow from a release branch to publish."
