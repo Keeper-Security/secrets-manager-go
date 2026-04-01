@@ -1,6 +1,7 @@
 package test
 
 import (
+	"encoding/json"
 	"testing"
 
 	ksm "github.com/keeper-security/secrets-manager-go/core"
@@ -58,5 +59,92 @@ func TestLoginRecordPassword(t *testing.T) {
 		t.Error("didn't get 1 record for the ugly")
 	} else if records[0].Password() != "" {
 		t.Error("password is defined for the ugly")
+	}
+}
+
+// KSM-860: RecordField must serialize with lowercase JSON keys.
+// Go's default json.Marshal uses exported field names ("Type", "Label", etc.) unless json struct tags are present.
+func TestRecordFieldJsonKeysAreLowercase(t *testing.T) {
+	rf := ksm.NewRecordField("login", "", false, []string{"user@example.com"})
+	data, err := json.Marshal(rf)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+	for _, key := range []string{"type", "label", "value", "required"} {
+		if _, ok := m[key]; !ok {
+			t.Errorf("missing lowercase key %q in serialized RecordField; got: %s", key, data)
+		}
+	}
+}
+
+// KSM-860: NewRecordField must not double-nest []string values.
+// Callers pass []string but the type assertion only catches []interface{}, causing [["x"]] instead of ["x"].
+func TestRecordFieldValueNotDoubleNested(t *testing.T) {
+	rf := ksm.NewRecordField("login", "", false, []string{"user@example.com"})
+	if len(rf.Value) != 1 {
+		t.Fatalf("expected Value len 1, got %d: %v", len(rf.Value), rf.Value)
+	}
+	if rf.Value[0] != "user@example.com" {
+		t.Errorf("expected Value[0] == \"user@example.com\", got %T %v", rf.Value[0], rf.Value[0])
+	}
+}
+
+// KSM-756: Records in the flat records[] array that carry a folderUid must be decrypted
+// with the folder key, not the app key. The SDK previously used the app key unconditionally,
+// causing field values to come back empty for shared-folder records returned in the flat array.
+func TestSharedFolderRecordInFlatArray(t *testing.T) {
+	defer ResetMockResponseQueue()
+
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", "", ""))
+	config := ksm.NewMemoryKeyValueStorage(configJson)
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}, Ctx)
+
+	res := NewMockResponse([]byte{}, 200, nil)
+
+	// Shared folder with a distinct key — included in the response so the SDK can
+	// look up and decrypt the folder key when processing the flat record.
+	folder := res.AddFolder("shared-folder-uid", nil)
+
+	// Flat record: folderUid set, recordKey encrypted with the folder key (not app key).
+	flatRecord := NewMockRecord("login", "shared-record-uid", "Shared Record")
+	flatRecord.Field("login", "", "", "", "user@example.com")
+	flatRecord.Field("password", "", "", "", "s3cr3t")
+	flatRecord.FolderUid = folder.Uid
+	flatRecord.FolderKey = folder.Key
+	res.Records[flatRecord.Uid] = flatRecord
+
+	MockResponseQueue.AddMockResponse(res)
+
+	records, err := sm.GetSecrets([]string{})
+	if err != nil {
+		t.Fatalf("GetSecrets failed: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	r := records[0]
+	if login := r.GetFieldValueByType("login"); login != "user@example.com" {
+		t.Errorf("expected login 'user@example.com', got %q", login)
+	}
+	if pass := r.GetFieldValueByType("password"); pass != "s3cr3t" {
+		t.Errorf("expected password 's3cr3t', got %q", pass)
+	}
+	if r.FolderUid() != "shared-folder-uid" {
+		t.Errorf("expected folderUid 'shared-folder-uid', got %q", r.FolderUid())
+	}
+}
+
+// KSM-826: RecordCreate.ToDict() must always include "custom" key, even when empty.
+// Commander and Vault always send "custom": [] and the backend expects it present.
+func TestRecordCreateToDictAlwaysIncludesCustom(t *testing.T) {
+	rc := ksm.NewRecordCreate("login", "Test Record")
+	// Custom is empty (default)
+	dict := rc.ToDict()
+	if _, ok := dict["custom"]; !ok {
+		t.Error("ToDict() missing 'custom' key when Custom is empty")
 	}
 }

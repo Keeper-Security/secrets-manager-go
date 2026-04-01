@@ -3,7 +3,6 @@ package test
 import (
 	"bytes"
 	"encoding/binary"
-	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
@@ -31,7 +30,7 @@ func TestMissingConfig(t *testing.T) {
 	}
 
 	// tempDirName := t.TempDir()
-	tempDirName, err := ioutil.TempDir("", "")
+	tempDirName, err := os.MkdirTemp("", "")
 	if err != nil {
 		t.Error(err.Error())
 	}
@@ -59,7 +58,7 @@ func TestDefaultLoadFromJson(t *testing.T) {
 	}
 
 	// tempDirName := t.TempDir()
-	tempDirName, err := ioutil.TempDir("", "")
+	tempDirName, err := os.MkdirTemp("", "")
 	if err != nil {
 		t.Error(err.Error())
 	}
@@ -68,7 +67,7 @@ func TestDefaultLoadFromJson(t *testing.T) {
 	mockConfig := MockConfig{}.MakeConfig(nil, "", "", "")
 	configJson := MockConfig{}.MakeJson(mockConfig)
 	if err := os.Chdir(tempDirName); err == nil {
-		if err := ioutil.WriteFile(defaultConfigName, []byte(configJson), 0644); err == nil {
+		if err := os.WriteFile(defaultConfigName, []byte(configJson), 0644); err == nil {
 			sm := ksm.NewSecretsManager(nil)
 			if sm.Config.Get(ksm.KEY_HOSTNAME) != mockConfig["hostname"] {
 				t.Error("did not get correct hostname")
@@ -97,7 +96,7 @@ func TestOverwriteViaArgs(t *testing.T) {
 	}
 
 	// tempDirName := t.TempDir()
-	tempDirName, err := ioutil.TempDir("", "")
+	tempDirName, err := os.MkdirTemp("", "")
 	if err != nil {
 		t.Error(err.Error())
 	}
@@ -106,7 +105,7 @@ func TestOverwriteViaArgs(t *testing.T) {
 	mockConfig := MockConfig{}.MakeConfig(nil, "localhost:ABC123", "", "")
 	configJson := MockConfig{}.MakeJson(mockConfig)
 	if err := os.Chdir(tempDirName); err == nil {
-		if err := ioutil.WriteFile(defaultConfigName, []byte(configJson), 0644); err == nil {
+		if err := os.WriteFile(defaultConfigName, []byte(configJson), 0644); err == nil {
 			// Pass in the client key and hostname
 			sm := ksm.NewSecretsManager(&ksm.ClientOptions{Token: "ABC123", Hostname: "localhost"})
 			if sm.Config.Get(ksm.KEY_HOSTNAME) != "localhost" {
@@ -177,7 +176,7 @@ func TestPassInConfig(t *testing.T) {
 	}
 
 	// tempDirName := t.TempDir()
-	tempDirName, err := ioutil.TempDir("", "")
+	tempDirName, err := os.MkdirTemp("", "")
 	if err != nil {
 		t.Error(err.Error())
 	}
@@ -458,7 +457,7 @@ func TestEncoding(t *testing.T) {
 	mockConfig := MockConfig{}.MakeConfig(nil, "", "", "")
 	configJson := MockConfig{}.MakeJson(mockConfig)
 
-	if f, err := ioutil.TempFile("", ""); err == nil {
+	if f, err := os.CreateTemp("", ""); err == nil {
 		defer func() {
 			f.Close()
 			os.Remove(f.Name())
@@ -470,7 +469,7 @@ func TestEncoding(t *testing.T) {
 			t.Error("binary.Write failed:", err)
 		}
 
-		if err := ioutil.WriteFile(f.Name(), append([]byte{0xFF, 0xFE}, []byte(wbuf.Bytes())...), 0644); err == nil {
+		if err := os.WriteFile(f.Name(), append([]byte{0xFF, 0xFE}, []byte(wbuf.Bytes())...), 0644); err == nil {
 			config := ksm.NewFileKeyValueStorage(f.Name())
 			dictConfig := config.ReadStorage()
 			if len(dictConfig) != 0 {
@@ -484,7 +483,7 @@ func TestEncoding(t *testing.T) {
 		if err := binary.Write(wbuf, binary.BigEndian, utf16Json); err != nil {
 			t.Error("binary.Write failed:", err)
 		}
-		if err := ioutil.WriteFile(f.Name(), append([]byte{0xFE, 0xFF}, []byte(wbuf.Bytes())...), 0644); err == nil {
+		if err := os.WriteFile(f.Name(), append([]byte{0xFE, 0xFF}, []byte(wbuf.Bytes())...), 0644); err == nil {
 			config := ksm.NewFileKeyValueStorage(f.Name())
 			dictConfig := config.ReadStorage()
 			if len(dictConfig) != 0 {
@@ -494,7 +493,7 @@ func TestEncoding(t *testing.T) {
 			t.Error(err.Error())
 		}
 
-		if err := ioutil.WriteFile(f.Name(), append([]byte{0xEF, 0xBB, 0xBF}, []byte(configJson)...), 0644); err == nil {
+		if err := os.WriteFile(f.Name(), append([]byte{0xEF, 0xBB, 0xBF}, []byte(configJson)...), 0644); err == nil {
 			config := ksm.NewFileKeyValueStorage(f.Name())
 			dictConfig := config.ReadStorage()
 			if len(dictConfig) == 0 {

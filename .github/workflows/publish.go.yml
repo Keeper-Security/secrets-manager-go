@@ -4,21 +4,269 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: 'Publish release (uncheck to build/test only)'
+        description: "Publish release (uncheck to build/test only)"
         required: false
-        default: 'true'
+        default: true
         type: boolean
       version_tag:
-        description: 'Version tag (e.g., v1.7.0, leave empty to auto-detect)'
+        description: "Version tag (e.g., v1.7.0, leave empty to auto-detect)"
         required: false
         type: string
 
+permissions:
+  contents: read
+
 jobs:
-  placeholder:
+  get-version:
     runs-on: ubuntu-latest
+    outputs:
+      sdk-version: ${{ steps.extract-version.outputs.version }}
+      git-tag: ${{ steps.extract-version.outputs.git_tag }}
     steps:
-      - name: Placeholder
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Extract SDK version
+        id: extract-version
+        working-directory: ./core
+        env:
+          VERSION_TAG_INPUT: ${{ github.event.inputs.version_tag }}
         run: |
-          echo "This is a placeholder workflow on master branch."
-          echo "The full implementation exists on release branches."
-          echo "Run this workflow from a release branch to publish."
+          # Extract version from keeper_globals.go
+          VERSION=$(grep -Po 'version\s+string\s+=\s+"\K[^"]*' keeper_globals.go | head -1)
+
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not extract version from keeper_globals.go"
+            exit 1
+          fi
+
+          echo "SDK Version: $VERSION"
+
+          # Convert internal version (17.0.0) to git tag format (v1.7.0)
+          # Internal version format: MAJOR.MINOR.PATCH (e.g., 17.0.0 = v1.7.0)
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+
+          # SDK versions 16.x.x map to v1.6.x, 17.x.x map to v1.7.x
+          GIT_MAJOR=1
+          GIT_MINOR=$((MAJOR - 16))
+          GIT_TAG="v${GIT_MAJOR}.${GIT_MINOR}.${PATCH}"
+
+          # Allow manual override via environment variable (avoids template injection)
+          if [ -n "$VERSION_TAG_INPUT" ]; then
+            GIT_TAG="$VERSION_TAG_INPUT"
+            echo "Using manually specified tag: $GIT_TAG"
+          fi
+
+          echo "Git Tag: $GIT_TAG"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "git_tag=$GIT_TAG" >> "$GITHUB_OUTPUT"
+
+  # Generate SBOM inline (adapted for Go)
+  generate-sbom:
+    needs: get-version
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.22.x"
+          cache-dependency-path: core/go.sum
+
+      - name: Build project to resolve dependencies
+        working-directory: ./core
+        run: |
+          echo "Building Go SDK to ensure all dependencies are resolved..."
+          go mod download
+          go build ./...
+
+          echo "Listing Go module dependencies:"
+          go list -m all
+
+      - name: Generate and publish SBOM
+        env:
+          MANIFEST_TOKEN: ${{ secrets.MANIFEST_TOKEN }}
+          PROJECT_VERSION: ${{ needs.get-version.outputs.sdk-version }}
+        run: |
+          # Install Syft v1.18.1 (SBOM generation tool)
+          echo "Installing Syft v1.18.1..."
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.18.1
+
+          # Install Manifest CLI v0.18.3 (SBOM publisher)
+          echo "Installing Manifest CLI v0.18.3..."
+          curl -sSfL https://raw.githubusercontent.com/manifest-cyber/cli/main/install.sh | sh -s -- -b /usr/local/bin v0.18.3
+
+          # Create clean scan directory
+          SCAN_DIR="${{ runner.temp }}/go-sdk-scan"
+          mkdir -p "$SCAN_DIR"
+
+          echo "Copying Go SDK core module to scan directory..."
+          cp -r ./core/* "$SCAN_DIR/"
+
+          cd "$SCAN_DIR"
+
+          echo "Scan directory contents:"
+          ls -la
+
+          echo "Creating Syft config for Go module scanning..."
+          cat > syft-config.yaml << 'EOF'
+          package:
+            search:
+              scope: all-layers
+            cataloger:
+              enabled: true
+              # Enable only Go cataloger for clean SBOM
+              golang:
+                enabled: true
+                search-local-mod-cache-licenses: true
+                local-mod-cache-dir: ""
+                search-remote-licenses: false
+                proxy: ""
+              # Disable other catalogers
+              ruby:
+                enabled: false
+              python:
+                enabled: false
+              nodejs:
+                enabled: false
+              java:
+                enabled: false
+              dotnet:
+                enabled: false
+              rust:
+                enabled: false
+              php:
+                enabled: false
+          EOF
+
+          cat syft-config.yaml
+
+          echo "Syft version:"
+          syft version
+
+          echo "Manifest CLI version:"
+          manifest version || true
+
+          echo "Running Syft scan to verify Go module detection..."
+          syft scan . --config syft-config.yaml -vv || true
+
+          # Generate and publish SBOM using Manifest CLI
+          echo "Generating and publishing SBOM with Manifest CLI..."
+          manifest sbom . \
+            --generator=syft \
+            --name=keeper-secrets-manager-go \
+            --version="${PROJECT_VERSION}" \
+            --output=spdx-json \
+            --file=sbom.json \
+            --api-key="${MANIFEST_TOKEN}" \
+            --publish=true \
+            --asset-label=application,sbom-generated,golang,ksm,sdk,security
+
+          # Copy SBOM back to workspace
+          cp sbom.json "${{ github.workspace }}/"
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom-keeper-secrets-manager-go-${{ needs.get-version.outputs.sdk-version }}
+          path: ./sbom.json
+          retention-days: 10  # Repository maximum
+
+  # Run tests on multiple Go versions (existing test.go.yml logic)
+  build-and-test:
+    needs: generate-sbom
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        go-version: ["1.16.x", "1.20.x", "1.22.x"]
+
+    defaults:
+      run:
+        working-directory: ./test
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Go ${{ matrix.go-version }}
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache-dependency-path: test/go.sum
+
+      - name: Add local module replacement
+        run: |
+          echo "replace github.com/keeper-security/secrets-manager-go/core => ../core" >> go.mod
+
+      - name: Verify module replacement
+        run: |
+          pwd
+          ls -la
+          cat go.mod
+
+      - name: Run tests
+        run: go test -p 1 ./...
+
+  # Build core module to verify compilation
+  build-core:
+    needs: generate-sbom
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        go-version: ["1.16.x", "1.20.x", "1.22.x"]
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Go ${{ matrix.go-version }}
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache-dependency-path: core/go.sum
+
+      - name: Build core module
+        working-directory: ./core
+        run: go build ./...
+
+  # Create GitHub release and tag (only if publish == true)
+  create-release:
+    needs: [get-version, build-and-test, build-core]
+    if: ${{ github.event.inputs.publish == 'true' }}
+    environment: prod
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: sbom-keeper-secrets-manager-go-${{ needs.get-version.outputs.sdk-version }}
+          path: ./artifacts
+
+      - name: Create GitHub release and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GIT_TAG: ${{ needs.get-version.outputs.git-tag }}
+        run: |
+          gh release create "$GIT_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target master \
+            --title "Go SDK $GIT_TAG" \
+            --generate-notes \
+            ./artifacts/sbom.json
+
+          echo "::notice::Release $GIT_TAG created successfully!"
+          echo "::notice::pkg.go.dev will index the new version within ~15 minutes"
+          echo "::notice::Verify at https://pkg.go.dev/github.com/keeper-security/secrets-manager-go/core@$GIT_TAG"
