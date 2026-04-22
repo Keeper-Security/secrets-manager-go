@@ -454,7 +454,8 @@ func NewRecordFromJson(recordDict map[string]interface{}, secretKey []byte, fold
 			record.RawJson = recordDataJson
 			record.RecordDict = JsonToDict(record.RawJson)
 		} else {
-			klog.Error("error decrypting record data: " + err.Error())
+			klog.Error("error decrypting record data for UID " + record.Uid + ": " + err.Error())
+			return nil
 		}
 	}
 

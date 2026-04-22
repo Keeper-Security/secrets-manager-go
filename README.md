@@ -67,7 +67,11 @@ func main() {
 	// sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: ksm.NewFileKeyValueStorage("ksm-config.json")})
 
 	// Retrieve all records
-	allRecords, _ := sm.GetSecrets([]string{})
+	allRecords, err := sm.GetSecrets([]string{})
+	if err != nil || len(allRecords) == 0 {
+		print("No records found")
+		return
+	}
 
 	// Get password from first record:
 	password := allRecords[0].Password()
@@ -185,12 +189,17 @@ See [`example/custom-cache/`](example/custom-cache/) for a complete working impl
 * KSM-616 - Remove deprecated ioutil dependency
 * KSM-626 - Add GraphSync links
 * KSM-632 - Add links2Remove parameter for files removal
+* KSM-658 - Add custom cache example and document ICache interface
 * KSM-663 - Handle broken records, files, and folders
 * KSM-665 - Add HTTP Status Code to the error messages
 * KSM-701 - Write config files with secure permissions (0600)
-* KSM-658 - Add custom cache example and document ICache interface
 * KSM-736 - Fix notation lookup with record shortcuts (duplicate UID bug)
 * KSM-745 - Add transmission public key #18 for Gov Cloud Dev support
+* KSM-756 - Fix shared-folder flat records decrypting with wrong key (folder vs app key)
+* KSM-826 - Fix RecordCreate.ToDict() to always include "custom" key
+* KSM-860 - Fix RecordField JSON serialization (lowercase keys, no double-nesting)
+* KSM-911 - Skip records whose AES-GCM data decryption fails instead of returning empty stubs
+* KSM-912 - Fix proxy env var fallback (HTTPS_PROXY/HTTP_PROXY now respected)
 
 ## 1.6.5
 

@@ -148,3 +148,36 @@ func TestRecordCreateToDictAlwaysIncludesCustom(t *testing.T) {
 		t.Error("ToDict() missing 'custom' key when Custom is empty")
 	}
 }
+
+// KSM-911: GetSecrets must skip records whose AES-GCM data decryption fails.
+// Before this fix, a failed decryption produced an empty record stub appended to the result.
+func TestDecryptionFailureSkipsRecord(t *testing.T) {
+	defer ResetMockResponseQueue()
+
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", "", ""))
+	config := ksm.NewMemoryKeyValueStorage(configJson)
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}, Ctx)
+
+	res := NewMockResponse([]byte{}, 200, nil)
+
+	// Good record — decrypts normally.
+	res.AddRecord("Good Record", "login", "good-uid", nil, nil)
+
+	// Bad record — data is random bytes so AES-GCM authentication fails.
+	bad := NewMockRecord("login", "bad-uid", "Bad Record")
+	bad.CorruptData = true
+	res.Records[bad.Uid] = bad
+
+	MockResponseQueue.AddMockResponse(res)
+
+	records, err := sm.GetSecrets([]string{})
+	if err != nil {
+		t.Fatalf("GetSecrets returned unexpected error: %v", err)
+	}
+	if len(records) != 1 {
+		t.Errorf("expected 1 record (bad record should be skipped), got %d", len(records))
+	}
+	if len(records) == 1 && records[0].Uid != "good-uid" {
+		t.Errorf("expected good-uid record, got %q", records[0].Uid)
+	}
+}
