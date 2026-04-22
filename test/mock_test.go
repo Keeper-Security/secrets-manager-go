@@ -391,6 +391,7 @@ type MockRecord struct {
 	FolderUid    string // when set, added to Dump() output and FolderKey used for encryption
 	FolderKey    []byte // when set, used instead of secret for record key and data encryption
 	CorruptData  bool   // when set, data field is random bytes so AES-GCM decryption fails
+	CorruptKey   bool   // when set, recordKey field is random bytes so key decryption fails
 }
 
 func NewMockRecord(recordType, uid, title string) *MockRecord {
@@ -571,8 +572,14 @@ func (r *MockRecord) Dump(secret []byte, flags *MockFlags) map[string]interface{
 		recordData = core.BytesToBase64(encData)
 	}
 
-	recKey, _ := core.EncryptAesGcm(encKey, encKey)
-	recordKey := core.BytesToBase64(recKey)
+	var recordKey string
+	if r.CorruptKey {
+		junk, _ := core.GetRandomBytes(48)
+		recordKey = core.BytesToBase64(junk)
+	} else {
+		recKey, _ := core.EncryptAesGcm(encKey, encKey)
+		recordKey = core.BytesToBase64(recKey)
+	}
 
 	data := map[string]interface{}{
 		"recordUid":  r.Uid,

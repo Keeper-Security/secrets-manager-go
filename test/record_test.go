@@ -181,3 +181,75 @@ func TestDecryptionFailureSkipsRecord(t *testing.T) {
 		t.Errorf("expected good-uid record, got %q", records[0].Uid)
 	}
 }
+
+// KSM-911: GetSecrets must skip records whose AES-GCM key decryption fails.
+// A corrupted recordKey means RecordKeyBytes is never set; previously the record
+// was silently returned as a stub with no field data.
+func TestKeyDecryptionFailureSkipsRecord(t *testing.T) {
+	defer ResetMockResponseQueue()
+
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", "", ""))
+	config := ksm.NewMemoryKeyValueStorage(configJson)
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}, Ctx)
+
+	res := NewMockResponse([]byte{}, 200, nil)
+
+	// Good record — decrypts normally.
+	res.AddRecord("Good Record", "login", "good-uid", nil, nil)
+
+	// Bad record — recordKey is random bytes so key decryption fails before data is attempted.
+	bad := NewMockRecord("login", "bad-key-uid", "Bad Key Record")
+	bad.CorruptKey = true
+	res.Records[bad.Uid] = bad
+
+	MockResponseQueue.AddMockResponse(res)
+
+	records, err := sm.GetSecrets([]string{})
+	if err != nil {
+		t.Fatalf("GetSecrets returned unexpected error: %v", err)
+	}
+	if len(records) != 1 {
+		t.Errorf("expected 1 record (bad-key record should be skipped), got %d", len(records))
+	}
+	if len(records) == 1 && records[0].Uid != "good-uid" {
+		t.Errorf("expected good-uid record, got %q", records[0].Uid)
+	}
+}
+
+// KSM-911: GetSecrets must skip both corrupted-key and corrupted-data records,
+// returning only the healthy records from a mixed response.
+func TestMixedDecryptionFailuresSkipBadRecords(t *testing.T) {
+	defer ResetMockResponseQueue()
+
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", "", ""))
+	config := ksm.NewMemoryKeyValueStorage(configJson)
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}, Ctx)
+
+	res := NewMockResponse([]byte{}, 200, nil)
+
+	res.AddRecord("Good Record 1", "login", "good-1", nil, nil)
+	res.AddRecord("Good Record 2", "login", "good-2", nil, nil)
+
+	badData := NewMockRecord("login", "bad-data", "Bad Data")
+	badData.CorruptData = true
+	res.Records[badData.Uid] = badData
+
+	badKey := NewMockRecord("login", "bad-key", "Bad Key")
+	badKey.CorruptKey = true
+	res.Records[badKey.Uid] = badKey
+
+	MockResponseQueue.AddMockResponse(res)
+
+	records, err := sm.GetSecrets([]string{})
+	if err != nil {
+		t.Fatalf("GetSecrets returned unexpected error: %v", err)
+	}
+	if len(records) != 2 {
+		t.Errorf("expected 2 records (both bad records should be skipped), got %d", len(records))
+	}
+	for _, r := range records {
+		if r.Uid != "good-1" && r.Uid != "good-2" {
+			t.Errorf("unexpected record in result: %q", r.Uid)
+		}
+	}
+}
