@@ -36,6 +36,10 @@ func main() {
 		}
 	}
 
+	if len(allRecords) == 0 {
+		klog.Info("No records returned")
+		os.Exit(0)
+	}
 	recToUpdate := allRecords[0]
 
 	passwordField := map[string]interface{}{}
