@@ -303,15 +303,16 @@ func (f *MockFolder) Dump(secret []byte, flags *MockFlags) map[string]interface{
 }
 
 type MockFile struct {
-	Uid          string
-	SecretUsed   []byte
-	Name         string
-	Title        string
-	ContentType  string
-	Url          string
-	Content      []byte
-	Size         int
-	LastModified int
+	Uid            string
+	SecretUsed     []byte
+	Name           string
+	Title          string
+	ContentType    string
+	Url            string
+	Content        []byte
+	Size           int
+	LastModified   int
+	CorruptFileKey bool // when set, fileKey field is random bytes so key decryption fails
 }
 
 func NewMockFile(name, title, contentType, url string, content []byte, lastModified int) *MockFile {
@@ -371,8 +372,14 @@ func (f *MockFile) Dump(secret []byte, flags *MockFlags) map[string]interface{} 
 	encData, _ := core.EncryptAesGcm([]byte(data), secret)
 	recordData := core.BytesToBase64(encData)
 
-	encFileKey, _ := core.EncryptAesGcm(secret, secret)
-	fileKey := core.BytesToBase64(encFileKey)
+	var fileKey string
+	if f.CorruptFileKey {
+		junk, _ := core.GetRandomBytes(48)
+		fileKey = core.BytesToBase64(junk)
+	} else {
+		encFileKey, _ := core.EncryptAesGcm(secret, secret)
+		fileKey = core.BytesToBase64(encFileKey)
+	}
 
 	fileData := map[string]interface{}{
 		"fileUid":      f.Uid,

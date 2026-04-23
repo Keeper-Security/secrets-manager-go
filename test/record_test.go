@@ -304,3 +304,51 @@ func TestFolderKeyDecryptionFailureSkipsFolder(t *testing.T) {
 		t.Errorf("expected good-uid, got %q", records[0].Uid)
 	}
 }
+
+// KSM-914: NewKeeperFileFromJson must return nil when file key decryption fails.
+// Before this fix, it returned a non-nil stub with empty metadata and no way for
+// callers to detect the failure.
+func TestNewKeeperFileFromJsonNilOnCorruptKey(t *testing.T) {
+	recordKey, _ := ksm.GetRandomBytes(32)
+	junk, _ := ksm.GetRandomBytes(48)
+
+	fileDict := map[string]interface{}{
+		"fileUid": "test-file-uid",
+		"fileKey": ksm.BytesToBase64(junk),
+		"data":    ksm.BytesToBase64(junk),
+		"url":     "",
+	}
+
+	if file := ksm.NewKeeperFileFromJson(fileDict, recordKey); file != nil {
+		t.Error("expected nil from NewKeeperFileFromJson on corrupt file key, got non-nil stub")
+	}
+}
+
+// KSM-914: GetSecrets must not include files whose key decryption fails.
+// The record itself is still returned; only the bad file is dropped from record.Files.
+func TestFileKeyDecryptionFailureSkipsFile(t *testing.T) {
+	defer ResetMockResponseQueue()
+
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", "", ""))
+	config := ksm.NewMemoryKeyValueStorage(configJson)
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}, Ctx)
+
+	res := NewMockResponse([]byte{}, 200, nil)
+
+	rec := res.AddRecord("Record With Bad File", "login", "rec-uid", nil, nil)
+	badFile := rec.AddFile("secret.txt", "", "", "", nil, 0)
+	badFile.CorruptFileKey = true
+
+	MockResponseQueue.AddMockResponse(res)
+
+	records, err := sm.GetSecrets([]string{})
+	if err != nil {
+		t.Fatalf("GetSecrets returned unexpected error: %v", err)
+	}
+	if len(records) != 1 {
+		t.Errorf("expected 1 record, got %d", len(records))
+	}
+	if len(records) == 1 && len(records[0].Files) != 0 {
+		t.Errorf("expected 0 files (bad file key should be skipped), got %d", len(records[0].Files))
+	}
+}
