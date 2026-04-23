@@ -1102,8 +1102,11 @@ func NewKeeperFolder(folderMap map[string]interface{}, folderKey []byte) *Keeper
 				if err := json.Unmarshal(folderNameJson, &folderName); err == nil {
 					folder.Name = folderName.Name
 				} else {
-					klog.Error("error parsing folder name: " + err.Error())
+					klog.Error("error parsing folder name for " + folder.FolderUid + ": " + err.Error())
 				}
+			} else {
+				klog.Error("error decrypting folder name for " + folder.FolderUid + ": " + err.Error())
+				return nil
 			}
 		}
 	}
@@ -1142,7 +1145,8 @@ func NewFolderFromJson(folderDict map[string]interface{}, secretKey []byte) *Fol
 					}
 				}
 			} else {
-				klog.Error("error decrypting folder key: " + err.Error())
+				klog.Error("error decrypting folder key for " + folder.uid + ": " + err.Error())
+				return nil
 			}
 		}
 	} else {
@@ -1170,7 +1174,11 @@ func (f *Folder) Records() []*Record {
 				if record := NewRecordFromJson(r, f.key, f.uid); record != nil && record.Uid != "" {
 					records = append(records, record)
 				} else {
-					klog.Error("error parsing folder record: ", r)
+					if uid, ok := r["recordUid"]; ok {
+						klog.Error(fmt.Sprintf("Record %s in folder %s skipped: decryption failed", uid, f.uid))
+					} else {
+						klog.Error(fmt.Sprintf("Record in folder %s skipped: decryption failed", f.uid))
+					}
 				}
 			}()
 		}
