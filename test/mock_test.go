@@ -249,9 +249,10 @@ func GetRandomUid() (uid string, err error) {
 }
 
 type MockFolder struct {
-	Uid     string
-	Records map[string]interface{}
-	Key     []byte // distinct folder key, encrypted with app key when dumped
+	Uid        string
+	Records    map[string]interface{}
+	Key        []byte // distinct folder key, encrypted with app key when dumped
+	CorruptKey bool   // when set, folderKey field is random bytes so key decryption fails
 }
 
 func NewMockFolder(uid string) *MockFolder {
@@ -275,9 +276,14 @@ func (f *MockFolder) AddRecord(title, recordType, uid string, record *MockRecord
 }
 
 func (f *MockFolder) Dump(secret []byte, flags *MockFlags) map[string]interface{} {
-	// Encrypt the folder key with the app key, as the backend does in production.
-	encFolderKey, _ := core.EncryptAesGcm(f.Key, secret)
-	folderKey := core.BytesToBase64(encFolderKey)
+	var folderKey string
+	if f.CorruptKey {
+		junk, _ := core.GetRandomBytes(48)
+		folderKey = core.BytesToBase64(junk)
+	} else {
+		encFolderKey, _ := core.EncryptAesGcm(f.Key, secret)
+		folderKey = core.BytesToBase64(encFolderKey)
+	}
 
 	records := []interface{}{}
 	for _, record := range f.Records {

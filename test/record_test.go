@@ -253,3 +253,54 @@ func TestMixedDecryptionFailuresSkipBadRecords(t *testing.T) {
 		}
 	}
 }
+
+// KSM-913: NewFolderFromJson must return nil when folder key decryption fails.
+// Before this fix, it returned a non-nil stub with an empty key and no records,
+// giving callers no way to detect the failure.
+func TestNewFolderFromJsonNilOnCorruptKey(t *testing.T) {
+	secretKey, _ := ksm.GetRandomBytes(32)
+	junk, _ := ksm.GetRandomBytes(48)
+
+	folderDict := map[string]interface{}{
+		"folderUid": "test-folder-uid",
+		"folderKey": ksm.BytesToBase64(junk), // random bytes — key decryption must fail
+		"records":   []interface{}{},
+	}
+
+	if folder := ksm.NewFolderFromJson(folderDict, secretKey); folder != nil {
+		t.Error("expected nil from NewFolderFromJson on corrupt folder key, got non-nil stub")
+	}
+}
+
+// KSM-913: GetSecrets must not return records from a folder whose key is corrupt.
+// This verifies end-to-end that the nil return from NewFolderFromJson propagates
+// correctly through fetchAndDecryptSecrets.
+func TestFolderKeyDecryptionFailureSkipsFolder(t *testing.T) {
+	defer ResetMockResponseQueue()
+
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", "", ""))
+	config := ksm.NewMemoryKeyValueStorage(configJson)
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}, Ctx)
+
+	res := NewMockResponse([]byte{}, 200, nil)
+
+	res.AddRecord("Good Record", "login", "good-uid", nil, nil)
+
+	badFolder := NewMockFolder("bad-folder-uid")
+	badFolder.CorruptKey = true
+	badFolder.AddRecord("Folder Record", "login", "folder-record-uid", nil)
+	res.Folders[badFolder.Uid] = badFolder
+
+	MockResponseQueue.AddMockResponse(res)
+
+	records, err := sm.GetSecrets([]string{})
+	if err != nil {
+		t.Fatalf("GetSecrets returned unexpected error: %v", err)
+	}
+	if len(records) != 1 {
+		t.Errorf("expected 1 record (bad folder should be skipped), got %d", len(records))
+	}
+	if len(records) == 1 && records[0].Uid != "good-uid" {
+		t.Errorf("expected good-uid, got %q", records[0].Uid)
+	}
+}

@@ -1036,10 +1036,8 @@ func (c *SecretsManager) fetchAndDecryptFolders() (folders []*KeeperFolder, err 
 				}
 
 				folder := NewKeeperFolder(fmap, fkey)
-				if f != nil {
+				if folder != nil {
 					folders = append(folders, folder)
-				} else {
-					klog.Error("error parsing folder JSON: ", f)
 				}
 			}
 		} else {
