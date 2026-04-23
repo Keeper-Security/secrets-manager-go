@@ -200,6 +200,8 @@ See [`example/custom-cache/`](example/custom-cache/) for a complete working impl
 * KSM-860 - Fix RecordField JSON serialization (lowercase keys, no double-nesting)
 * KSM-911 - Skip records whose AES-GCM data decryption fails instead of returning empty stubs
 * KSM-912 - Fix proxy env var fallback (HTTPS_PROXY/HTTP_PROXY now respected)
+* KSM-913 - Return nil from NewFolderFromJson/NewKeeperFolder when folder key/name decryption fails
+* KSM-914 - Return nil from NewKeeperFileFromJson when file key decryption fails
 
 ## 1.6.5
 
