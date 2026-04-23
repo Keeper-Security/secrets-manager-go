@@ -1209,6 +1209,10 @@ func NewKeeperFileFromJson(fileDict map[string]interface{}, recordKeyBytes []byt
 		RecordKeyBytes: recordKeyBytes,
 	}
 
+	if len(f.DecryptFileKey()) == 0 {
+		return nil
+	}
+
 	// Set file metadata
 	meta := f.GetMeta()
 
@@ -1258,7 +1262,7 @@ func (f *KeeperFile) DecryptFileKey() []byte {
 		return fileKey
 	} else {
 		klog.Error("error decrypting file key " + fileKeyEncryptedBase64Str)
-		return []byte{}
+		return nil
 	}
 }
 
@@ -1267,6 +1271,9 @@ func (f *KeeperFile) GetMeta() map[string]interface{} {
 	if len(f.metaDict) == 0 {
 		if data, ok := f.F["data"]; ok && data != nil {
 			fileKey := f.DecryptFileKey()
+			if len(fileKey) == 0 {
+				return f.metaDict
+			}
 			dataStr := fmt.Sprintf("%v", data)
 			if metaJson, err := Decrypt(Base64ToBytes(dataStr), fileKey); err == nil {
 				f.metaDict = JsonToDict(string(metaJson[:]))
@@ -1296,6 +1303,8 @@ func (f *KeeperFile) GetFileData() []byte {
 				if fileEncryptedData, err := io.ReadAll(rs.Body); err == nil {
 					if fileData, err := Decrypt(fileEncryptedData, fileKey); err == nil {
 						f.FileData = fileData
+					} else {
+						klog.Error("error decrypting file data for " + f.Uid + ": " + err.Error())
 					}
 				}
 			}
