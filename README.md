@@ -10,7 +10,15 @@
 
 This library provides interface to Keeper Secrets Manager and can be used to access your Keeper vault, read and update existing records, rotate passwords and more. Keeper Secrets Manager is an open source project with contributions from Keeper's engineering team and partners.
 
-## Features:
+## Features
+
+- Zero-knowledge client-side encryption (AES-256-GCM, ECDH)
+- Read, create, update, and delete vault records and files
+- HTTP proxy support via `ClientOptions.ProxyUrl` or `HTTPS_PROXY`/`HTTP_PROXY` env vars
+- Regional token support (`US:`, `EU:`, `AU:`, `GOV:`, `JP:`, `CA:`)
+- Pluggable caching via the `ICache` interface
+- No external dependencies (Go standard library only)
+- Requires Go 1.16+
 
 ## Obtain a One-Time Access Token
 Keeper Secrets Manager authenticates your API requests using advanced encryption that uses locally stored private key, device id and client id.
@@ -125,10 +133,27 @@ Listed in priority order
 
 - `clientKey` - One Time Access Token used during initialization
 - `hostname` - Keeper Backend host. Available values:
-    - `keepersecurity.com`
-    - `keepersecurity.eu`
-    - `keepersecurity.com.au`
-    - `govcloud.keepersecurity.us`
+    - `keepersecurity.com` (US)
+    - `keepersecurity.eu` (EU)
+    - `keepersecurity.com.au` (AU)
+    - `govcloud.keepersecurity.us` (GOV)
+    - `keepersecurity.jp` (JP)
+    - `keepersecurity.ca` (CA)
+
+Alternatively, pass a regional token (e.g. `US:ONE_TIME_TOKEN`) and the hostname is set automatically.
+
+### HTTP Proxy
+
+Set `ClientOptions.ProxyUrl` to route SDK traffic through a proxy:
+
+```go
+sm := ksm.NewSecretsManager(&ksm.ClientOptions{
+    Config:   ksm.NewFileKeyValueStorage("ksm-config.json"),
+    ProxyUrl: "http://proxy.example.com:8080",
+})
+```
+
+If `ProxyUrl` is not set, the standard `HTTPS_PROXY` and `HTTP_PROXY` environment variables are honored automatically.
 
 ## Adding more records or shared folders to the Application
 
@@ -202,6 +227,7 @@ See [`example/custom-cache/`](example/custom-cache/) for a complete working impl
 * KSM-912 - Fix proxy env var fallback (HTTPS_PROXY/HTTP_PROXY now respected)
 * KSM-913 - Return nil from NewFolderFromJson/NewKeeperFolder when folder key/name decryption fails
 * KSM-914 - Return nil from NewKeeperFileFromJson when file key decryption fails
+* KSM-916 - Return error from GetSecrets when app key decryption fails in just-bound flow
 
 ## 1.6.5
 

@@ -1,3 +1,19 @@
+// Package core is the Keeper Secrets Manager Go SDK, providing zero-knowledge
+// access to secrets stored in Keeper vaults.
+//
+// Secrets are encrypted and decrypted entirely client-side; the SDK never
+// transmits plaintext credentials. Use [NewSecretsManager] to create a client,
+// then call [SecretsManager.GetSecrets] to retrieve records.
+//
+// # Quick Start
+//
+//	sm := ksm.NewSecretsManager(&ksm.ClientOptions{
+//	    Token:  "US:ONE_TIME_TOKEN",
+//	    Config: ksm.NewFileKeyValueStorage("ksm-config.json"),
+//	})
+//	records, err := sm.GetSecrets([]string{})
+//
+// For full documentation see https://docs.keeper.io/secrets-manager/secrets-manager/developer-sdk-library/golang-sdk
 package core
 
 import (
