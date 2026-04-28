@@ -352,3 +352,22 @@ func TestFileKeyDecryptionFailureSkipsFile(t *testing.T) {
 		t.Errorf("expected 0 files (bad file key should be skipped), got %d", len(records[0].Files))
 	}
 }
+
+// KSM-917: NewKeeperFolder must return nil when CBC decryption produces garbage that
+// fails json.Unmarshal. Before this fix, it logged the error but returned a non-nil
+// stub with Name = "", indistinguishable from a legitimately empty-named folder.
+func TestNewKeeperFolderNilOnUnmarshalFailure(t *testing.T) {
+	folderKey, _ := ksm.GetRandomBytes(32)
+	notJSON := []byte("not-json-garbage!!!")
+	encrypted, err := ksm.EncryptAesCbc(notJSON, folderKey)
+	if err != nil {
+		t.Fatalf("EncryptAesCbc failed: %v", err)
+	}
+	folderMap := map[string]interface{}{
+		"folderUid": "test-folder-uid-917",
+		"data":      ksm.BytesToUrlSafeStr(encrypted),
+	}
+	if folder := ksm.NewKeeperFolder(folderMap, folderKey); folder != nil {
+		t.Errorf("expected nil from NewKeeperFolder when CBC decrypts to non-JSON, got non-nil stub with Name=%q", folder.Name)
+	}
+}
