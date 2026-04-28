@@ -49,8 +49,9 @@ jobs:
           PATCH=$(echo "$VERSION" | cut -d. -f3)
 
           # SDK versions 16.x.x map to v1.6.x, 17.x.x map to v1.7.x
+          # Internal major 16 -> git minor 6: offset is 10, not 16
           GIT_MAJOR=1
-          GIT_MINOR=$((MAJOR - 16))
+          GIT_MINOR=$((MAJOR - 10))
           GIT_TAG="v${GIT_MAJOR}.${GIT_MINOR}.${PATCH}"
 
           # Allow manual override via environment variable (avoids template injection)
@@ -58,6 +59,15 @@ jobs:
             GIT_TAG="$VERSION_TAG_INPUT"
             echo "Using manually specified tag: $GIT_TAG"
           fi
+
+          if [ "$GIT_MINOR" -lt 0 ]; then
+            echo "::error::Negative git minor version computed: $GIT_MINOR; check internal version in keeper_globals.go"
+            exit 1
+          fi
+          [[ "$GIT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "::error::Invalid tag format: $GIT_TAG"
+            exit 1
+          }
 
           echo "Git Tag: $GIT_TAG"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
