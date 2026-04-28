@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const defautFilePath = "ksm_cache.bin"
+const defaultFilePath = "ksm_cache.bin"
 
 // ICache defines the interface for caching encrypted KSM API responses.
 // Implement this interface to provide a custom caching backend — for example,
@@ -63,7 +63,7 @@ func (c *fileCache) Purge() error {
 func NewFileCache(filePath string) *fileCache {
 	path := strings.TrimSpace(filePath)
 	if path == "" {
-		path = defautFilePath
+		path = defaultFilePath
 	}
 
 	// If the file path is not absolute

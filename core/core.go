@@ -1130,6 +1130,8 @@ func (c *SecretsManager) fetchAndDecryptSecrets(queryOptions QueryOptions) (smr 
 							for _, fRaw := range fArray {
 								if fMap, ok := fRaw.(map[string]interface{}); ok && fMap["folderUid"] == uid {
 									if keyEnc, ok := fMap["folderKey"].(string); ok && keyEnc != "" {
+										// Folder keys are transported AES-GCM-wrapped by the app key;
+										// the unwrapped folder key is then used for AES-CBC record decryption below.
 										if folderKey, err := Decrypt(Base64ToBytes(keyEnc), secretKey); err == nil {
 											decryptionKey = folderKey
 										} else {
