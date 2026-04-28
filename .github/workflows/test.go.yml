@@ -32,5 +32,9 @@ jobs:
 
     - run: pwd; ls -la; cat go.mod
 
-    - name: Run tests
+    - name: Run integration tests
       run: go test -p 1 ./...
+
+    - name: Run core unit tests
+      working-directory: ./core
+      run: go test ./...

@@ -2529,7 +2529,9 @@ func getTransport(proxyUrl string, VerifySslCerts bool) *http.Transport {
 			Proxy: http.ProxyURL(proxyURL),
 		}
 	} else {
-		transport = &http.Transport{}
+		transport = &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+		}
 	}
 
 	// If VerifySslCerts is false, set TLSClientConfig to skip certificate verification
