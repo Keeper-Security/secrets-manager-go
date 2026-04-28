@@ -23,7 +23,7 @@ jobs:
       sdk-version: ${{ steps.extract-version.outputs.version }}
       git-tag: ${{ steps.extract-version.outputs.git_tag }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
@@ -75,19 +75,18 @@ jobs:
 
   # Generate SBOM inline (adapted for Go)
   generate-sbom:
-    needs: get-version
+    needs: [get-version, build-and-test, build-core]
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
       - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version: "1.22.x"
-          cache-dependency-path: core/go.sum
 
       - name: Build project to resolve dependencies
         working-directory: ./core
@@ -182,7 +181,7 @@ jobs:
           cp sbom.json "${{ github.workspace }}/"
 
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sbom-keeper-secrets-manager-go-${{ needs.get-version.outputs.sdk-version }}
           path: ./sbom.json
@@ -190,7 +189,7 @@ jobs:
 
   # Run tests on multiple Go versions (existing test.go.yml logic)
   build-and-test:
-    needs: generate-sbom
+    needs: get-version
     runs-on: ubuntu-latest
 
     strategy:
@@ -202,12 +201,12 @@ jobs:
         working-directory: ./test
 
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
       - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version: ${{ matrix.go-version }}
           cache-dependency-path: test/go.sum
@@ -227,7 +226,7 @@ jobs:
 
   # Build core module to verify compilation
   build-core:
-    needs: generate-sbom
+    needs: get-version
     runs-on: ubuntu-latest
 
     strategy:
@@ -235,15 +234,14 @@ jobs:
         go-version: ["1.16.x", "1.20.x", "1.22.x"]
 
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
       - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version: ${{ matrix.go-version }}
-          cache-dependency-path: core/go.sum
 
       - name: Build core module
         working-directory: ./core
@@ -251,7 +249,7 @@ jobs:
 
   # Create GitHub release and tag (only if publish == true)
   create-release:
-    needs: [get-version, build-and-test, build-core]
+    needs: [get-version, generate-sbom]
     if: ${{ github.event.inputs.publish == 'true' }}
     environment: prod
     runs-on: ubuntu-latest
@@ -259,8 +257,12 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
       - name: Download SBOM artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: sbom-keeper-secrets-manager-go-${{ needs.get-version.outputs.sdk-version }}
           path: ./artifacts
@@ -272,9 +274,9 @@ jobs:
         run: |
           gh release create "$GIT_TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --target master \
+            --target "${{ github.sha }}" \
             --title "Go SDK $GIT_TAG" \
-            --generate-notes \
+            --notes-file CHANGELOG.md \
             ./artifacts/sbom.json
 
           echo "::notice::Release $GIT_TAG created successfully!"
