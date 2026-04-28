@@ -1103,6 +1103,7 @@ func NewKeeperFolder(folderMap map[string]interface{}, folderKey []byte) *Keeper
 					folder.Name = folderName.Name
 				} else {
 					klog.Error("error parsing folder name for " + folder.FolderUid + ": " + err.Error())
+					return nil
 				}
 			} else {
 				klog.Error("error decrypting folder name for " + folder.FolderUid + ": " + err.Error())
