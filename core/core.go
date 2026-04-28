@@ -1080,7 +1080,7 @@ func (c *SecretsManager) fetchAndDecryptSecrets(queryOptions QueryOptions) (smr 
 			}
 			c.Config.Delete(KEY_CLIENT_KEY)
 		} else {
-			klog.Error("failed to decrypt the application key")
+			return nil, fmt.Errorf("failed to decrypt the application key: %w", err)
 		}
 		if ownerPubKey, found := decryptedResponseDict[string(KEY_OWNER_PUBLIC_KEY)]; found && ownerPubKey != nil {
 			if appOwnerPublicKey := strings.TrimSpace(fmt.Sprintf("%v", ownerPubKey)); appOwnerPublicKey != "" {

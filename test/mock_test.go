@@ -63,14 +63,14 @@ type MockFlags struct {
 
 // MockResponse represents a response for the mock server to serve
 type MockResponse struct {
-	StatusCode int
-	Headers    http.Header
-	Content    []byte
-
-	Records map[string]interface{}
-	Folders map[string]interface{}
-	Reason  string
-	Flags   *MockFlags
+	StatusCode      int
+	Headers         http.Header
+	Content         []byte
+	Records         map[string]interface{}
+	Folders         map[string]interface{}
+	Reason          string
+	Flags           *MockFlags
+	EncryptedAppKey string // when non-empty, overrides the default "" in Dump()
 }
 
 func NewMockResponse(content []byte, statusCode int, flags *MockFlags) *MockResponse {
@@ -114,7 +114,7 @@ func (m *MockResponse) Dump(secret []byte, flags *MockFlags) map[string]interfac
 	}
 
 	response := map[string]interface{}{
-		"encryptedAppKey": "",
+		"encryptedAppKey": m.EncryptedAppKey,
 		"folders":         folders,
 		"records":         records,
 	}
