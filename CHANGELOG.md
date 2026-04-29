@@ -13,6 +13,8 @@ Tested against Go 1.16.15, 1.20.14, 1.22.x, and 1.25.0.
 
 **Full Changelog**: https://github.com/Keeper-Security/secrets-manager-go/compare/v1.6.2...v1.7.0
 
+**Migration Guide**: [docs/MIGRATION_v1.7.0.md](docs/MIGRATION_v1.7.0.md)
+
 ---
 
 ### Breaking Changes
