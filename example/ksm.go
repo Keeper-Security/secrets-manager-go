@@ -32,7 +32,9 @@ func main() {
 
 		for i, f := range r.Files {
 			klog.Printf("\t\tfile #%d -> name: %s", i, f.Name)
-			f.SaveFile("/tmp/"+f.Name, true)
+			if err := f.SaveFile("/tmp/"+f.Name, true); err != nil {
+				klog.Error("SaveFile: " + err.Error())
+			}
 		}
 	}
 

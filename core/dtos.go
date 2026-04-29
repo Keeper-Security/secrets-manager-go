@@ -557,20 +557,20 @@ func (r *Record) FindFiles(name string) []*KeeperFile {
 	return result
 }
 
-func (r *Record) DownloadFileByTitle(title string, path string) bool {
+func (r *Record) DownloadFileByTitle(title string, path string) error {
 	if foundFile := r.FindFileByTitle(title); foundFile != nil {
 		return foundFile.SaveFile(path, false)
 	}
-	return false
+	return fmt.Errorf("no file with title %q attached to record %s", title, r.Uid)
 }
 
-func (r *Record) DownloadFile(fileUid string, path string) bool {
+func (r *Record) DownloadFile(fileUid string, path string) error {
 	for i := range r.Files {
 		if r.Files[i].Uid == fileUid {
 			return r.Files[i].SaveFile(path, false)
 		}
 	}
-	return false
+	return fmt.Errorf("no file with UID %q attached to record %s", fileUid, r.Uid)
 }
 
 func (r *Record) ToString() string {
@@ -1314,11 +1314,10 @@ func (f *KeeperFile) GetFileData() []byte {
 	return f.FileData
 }
 
-func (f *KeeperFile) SaveFile(path string, createFolders bool) bool {
-	// Save decrypted file data to the provided path
+func (f *KeeperFile) SaveFile(path string, createFolders bool) error {
 	if createFolders {
 		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			klog.Error("error creating folders " + err.Error())
+			return fmt.Errorf("error creating directory %s: %w", filepath.Dir(path), err)
 		}
 	}
 
@@ -1331,16 +1330,13 @@ func (f *KeeperFile) SaveFile(path string, createFolders bool) bool {
 	}
 
 	if !pathExists {
-		klog.Error("No such file or directory %s\nConsider using `SaveFile()` method with `createFolders=True` ", path)
-		return false
+		return fmt.Errorf("directory does not exist: %s (use createFolders=true to create it)", filepath.Dir(path))
 	}
 
-	fileData := f.GetFileData()
-	if err := os.WriteFile(path, fileData, 0644); err != nil {
-		klog.Error("error savig file " + err.Error())
+	if err := os.WriteFile(path, f.GetFileData(), 0644); err != nil {
+		return fmt.Errorf("error saving file %s: %w", path, err)
 	}
-
-	return true
+	return nil
 }
 
 func (f *KeeperFile) ToString() string {
