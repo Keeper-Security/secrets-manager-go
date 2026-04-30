@@ -1,6 +1,7 @@
 package test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -11,7 +12,7 @@ func TestOurException(t *testing.T) {
 	// Exceptions the Secrets Manager server will send that have meaning.
 	defer func() {
 		if r := recover(); r != nil {
-			expectedMsg := "POST Error: Error: access_denied, message=Signature is invalid"
+			expectedMsg := "POST Error: HTTPStatus=403 Error: access_denied, message=Signature is invalid"
 			if msg, ok := r.(string); ok && strings.TrimSpace(msg) == expectedMsg {
 				t.Log("Received expected error code 403 'Signature is invalid'")
 			} else {
@@ -37,10 +38,28 @@ func TestOurException(t *testing.T) {
 
 	MockResponseQueue.AddMockResponse(NewMockResponse([]byte(errorJson), 403, nil))
 
-	if _, err := sm.GetSecrets(nil); err != nil && err.Error() == "POST Error: Error: access_denied, message=Signature is invalid" {
-		t.Log("Received expected error code 403 'Signature is invalid'")
-	} else {
-		t.Error("did not get correct error message")
+	_, err := sm.GetSecrets(nil)
+	expectedMsg := "POST Error: HTTPStatus=403 Error: access_denied, message=Signature is invalid"
+	if err == nil || err.Error() != expectedMsg {
+		t.Errorf("wrong error message: got %q, want %q", err, expectedMsg)
+		return
+	}
+	t.Log("Received expected error code 403 'Signature is invalid'")
+
+	// Verify errors.As exposes the structured fields.
+	var khe *ksm.KeeperHTTPError
+	if !errors.As(err, &khe) {
+		t.Error("errors.As did not find *KeeperHTTPError in chain")
+		return
+	}
+	if khe.StatusCode != 403 {
+		t.Errorf("KeeperHTTPError.StatusCode = %d, want 403", khe.StatusCode)
+	}
+	if khe.ResultCode != "access_denied" {
+		t.Errorf("KeeperHTTPError.ResultCode = %q, want %q", khe.ResultCode, "access_denied")
+	}
+	if khe.Message != "Signature is invalid" {
+		t.Errorf("KeeperHTTPError.Message = %q, want %q", khe.Message, "Signature is invalid")
 	}
 }
 
@@ -64,10 +83,62 @@ func TestNotOurException(t *testing.T) {
 
 	MockResponseQueue.AddMockResponse(NewMockResponse([]byte("Bad Gateway"), 502, nil))
 
-	if _, err := sm.GetSecrets(nil); err != nil && err.Error() == "POST Error: HTTPStatus=502 HTTPError: Bad Gateway" {
-		t.Log("Received expected error code 502 'Bad Gateway'")
-	} else {
-		t.Error("did not get correct error message")
+	_, err := sm.GetSecrets(nil)
+	expectedMsg := "POST Error: HTTPStatus=502 HTTPError: Bad Gateway"
+	if err == nil || err.Error() != expectedMsg {
+		t.Errorf("wrong error message: got %q, want %q", err, expectedMsg)
+		return
+	}
+	t.Log("Received expected error code 502 'Bad Gateway'")
+
+	// Verify errors.As exposes the structured fields.
+	var khe *ksm.KeeperHTTPError
+	if !errors.As(err, &khe) {
+		t.Error("errors.As did not find *KeeperHTTPError in chain")
+		return
+	}
+	if khe.StatusCode != 502 {
+		t.Errorf("KeeperHTTPError.StatusCode = %d, want 502", khe.StatusCode)
+	}
+	if khe.ResultCode != "" {
+		t.Errorf("KeeperHTTPError.ResultCode = %q, want empty (non-JSON body)", khe.ResultCode)
+	}
+	if string(khe.Body) != "Bad Gateway" {
+		t.Errorf("KeeperHTTPError.Body = %q, want %q", string(khe.Body), "Bad Gateway")
+	}
+}
+
+func TestHTTPErrorErrorsAs(t *testing.T) {
+	// Verify that a 429 JSON-error response produces a KeeperHTTPError with the correct status code.
+	defer ResetMockResponseQueue()
+
+	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", "", ""))
+	config := ksm.NewMemoryKeyValueStorage(configJson)
+	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}, Ctx)
+
+	errorJson := `{"error": "throttled", "message": "too many requests"}`
+	MockResponseQueue.AddMockResponse(NewMockResponse([]byte(errorJson), 429, nil))
+
+	_, err := sm.GetSecrets(nil)
+	if err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+
+	var khe *ksm.KeeperHTTPError
+	if !errors.As(err, &khe) {
+		t.Fatalf("errors.As did not find *KeeperHTTPError: %v", err)
+	}
+	if khe.StatusCode != 429 {
+		t.Errorf("KeeperHTTPError.StatusCode = %d, want 429", khe.StatusCode)
+	}
+	if khe.ResultCode != "throttled" {
+		t.Errorf("KeeperHTTPError.ResultCode = %q, want %q", khe.ResultCode, "throttled")
+	}
+	if khe.Message != "too many requests" {
+		t.Errorf("KeeperHTTPError.Message = %q, want %q", khe.Message, "too many requests")
+	}
+	if !strings.Contains(err.Error(), "HTTPStatus=429") {
+		t.Errorf("error string %q should contain HTTPStatus=429", err.Error())
 	}
 }
 

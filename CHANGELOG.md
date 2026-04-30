@@ -27,6 +27,17 @@ The SDK now uses `io` and `os` in place of the deprecated `ioutil` package. Requ
 2. Update CI/CD base images (`golang:1.15-*` and earlier will fail to build).
 3. Ensure your `go.mod` declares `go 1.16` or higher.
 
+**HTTP error string format change** (KSM-919)
+
+`GetSecrets` and other API methods now return `*core.KeeperHTTPError` for all non-200 responses. The `Error()` string on the JSON-error path now includes the HTTP status code (e.g. `"POST Error: HTTPStatus=403 Error: access_denied, message=..."`) matching the format already used on the non-JSON path. Code that string-matched `"POST Error: Error: access_denied, ..."` (without the status prefix) will no longer match. Migrate to `errors.As`:
+
+```go
+var khe *core.KeeperHTTPError
+if errors.As(err, &khe) {
+    // khe.StatusCode, khe.ResultCode, khe.Message
+}
+```
+
 **Behavioral changes: error handling on decryption failure**
 
 The following functions previously returned non-nil empty stubs on decryption failure and now return `nil`. Callers that did not nil-check the return value will panic on dereference. Audit usage of:
@@ -65,6 +76,7 @@ The following functions previously returned non-nil empty stubs on decryption fa
 **Network and runtime**
 
 - `HTTPS_PROXY`/`HTTP_PROXY` environment variables are now honored when `ProxyUrl` is not explicitly set, matching standard `net/http` behavior. Previously these variables were silently ignored. (KSM-912)
+- HTTP status code is now included in the caller-returned error on the JSON-error path. Previously it appeared only in the log line and the non-JSON fallback; callers on the common 4xx/5xx JSON path received no status code in `err.Error()`. (KSM-919)
 - Replaced `strings.Cut()` (Go 1.18+) with `strings.SplitN()` throughout. Users on Go 1.16 or 1.17 would have seen build failures with the previous code.
 
 ---
@@ -73,7 +85,7 @@ The following functions previously returned non-nil empty stubs on decryption fa
 
 - KSM tokens with a region prefix are now parsed correctly: `US:`, `EU:`, `AU:`, `GOV:`, `JP:`, `CA:`. The prefix sets the server hostname automatically; no separate `Hostname` option is required. (KSM-565)
 - HTTP proxy support added via `ClientOptions.ProxyUrl`. When `ProxyUrl` is not set, `HTTPS_PROXY`/`HTTP_PROXY` environment variables are honored automatically. (KSM-532)
-- HTTP error responses now include the status code in the error message. Format: `HTTP <code>: <body>`. Code that string-matches error messages may need updating. (KSM-665)
+- HTTP error responses include the HTTP status code in the error message and as a structured field. All non-200 API errors are returned as `*core.KeeperHTTPError` with `StatusCode`, `ResultCode`, and `Message` fields accessible via `errors.As`. (KSM-665, KSM-919)
 - `links2Remove` parameter added to support removing file attachment links when updating records. (KSM-632)
 - GraphSync link sharing support added for applications that resolve and share records via GraphSync. (KSM-626)
 - `SetNotes` now uses UPSERT behavior: it creates the notes field if it does not exist on the record, in addition to updating it. Previously it silently no-op'd on records without an existing notes field. (KSM-583)

@@ -846,13 +846,12 @@ func (c *SecretsManager) PostQuery(path string, payload interface{}) (body []byt
 		}
 
 		// Handle the error. Handler will return a retry status if it is a recoverable error.
-		if retry, err := c.HandleHttpError(ksmRs.HttpResponse, ksmRs.Data, err); !retry {
-			errMsg := "N/A"
-			if err != nil {
-				errMsg = err.Error()
+		if retry, httpErr := c.HandleHttpError(ksmRs.HttpResponse, ksmRs.Data, err); !retry {
+			if httpErr == nil {
+				httpErr = errors.New("N/A")
 			}
-			klog.Error("POST Error: " + errMsg)
-			return nil, errors.New("POST Error: " + errMsg)
+			klog.Error("POST Error: " + httpErr.Error())
+			return nil, fmt.Errorf("POST Error: %w", httpErr)
 		}
 	}
 
@@ -923,22 +922,28 @@ func (c *SecretsManager) HandleHttpError(rs *http.Response, body []byte, httpErr
 
 	responseDict := JsonToDict(string(body))
 	if len(responseDict) == 0 {
-		// This is an unknown error, not one of ours, just throw a HTTPError
-		return false, fmt.Errorf("HTTPStatus=%v HTTPError: %v", rs.StatusCode, string(body))
+		// Non-JSON body — unknown error not from the Keeper backend.
+		return false, &KeeperHTTPError{StatusCode: rs.StatusCode, Body: body}
 	}
 
 	// Try to get the error from result_code, then from error.
-	msg := ""
 	rc, found := responseDict["result_code"]
 	if !found {
 		rc, found = responseDict["error"]
 	}
-	if found && rc.(string) == "invalid_client_version" {
+	rcStr := ""
+	if found {
+		rcStr = fmt.Sprintf("%v", rc)
+	}
+
+	if found && rcStr == "invalid_client_version" {
 		klog.Error(fmt.Sprintf("Client version %s was not registered in the backend", keeperSecretsManagerClientId))
-		if additionalInfo, found := responseDict["additional_info"]; found {
-			msg = additionalInfo.(string)
+		additionalInfo := ""
+		if ai, ok := responseDict["additional_info"]; ok {
+			additionalInfo = fmt.Sprintf("%v", ai)
 		}
-	} else if found && rc.(string) == "key" {
+		return false, &KeeperHTTPError{StatusCode: rs.StatusCode, ResultCode: rcStr, Message: additionalInfo}
+	} else if found && rcStr == "key" {
 		// The server wants us to use a different public key.
 		keyId := ""
 		if kid, ok := responseDict["key_id"]; ok {
@@ -946,33 +951,26 @@ func (c *SecretsManager) HandleHttpError(rs *http.Response, body []byte, httpErr
 		}
 		klog.Info(fmt.Sprintf("Server has requested we use public key %v", keyId))
 		if len(keyId) == 0 {
-			msg = "The public key is blank from the server"
+			return false, &KeeperHTTPError{StatusCode: rs.StatusCode, ResultCode: rcStr, Message: "the public key is blank from the server"}
 		} else if _, found := keeperServerPublicKeys[keyId]; found {
 			if cfg := c.Config.Set(KEY_SERVER_PUBLIC_KEY_ID, keyId); len(cfg) > 0 {
 				// The only normal exit from this method
 				return true, nil
-			} else {
-				// read-only or inaccessible configuration
-				return false, errors.New("failed to switch the server public key")
 			}
-		} else {
-			msg = fmt.Sprintf("The public key at %v does not exist in the SDK", keyId)
+			// read-only or inaccessible configuration
+			return false, errors.New("failed to switch the server public key")
 		}
-	} else {
-		responseMsg, ok := responseDict["message"]
-		if !ok {
-			responseMsg = "N/A"
+		return false, &KeeperHTTPError{StatusCode: rs.StatusCode, ResultCode: rcStr, Message: fmt.Sprintf("the public key at %v does not exist in the SDK", keyId)}
+	} else if found {
+		responseMsg := "N/A"
+		if m, ok := responseDict["message"]; ok {
+			responseMsg = fmt.Sprintf("%v", m)
 		}
-		msg = fmt.Sprintf("Error: %v, message=%v", rc, responseMsg)
+		return false, &KeeperHTTPError{StatusCode: rs.StatusCode, ResultCode: rcStr, Message: responseMsg}
 	}
 
-	if msg != "" {
-		err = errors.New(msg)
-	} else if len(body) > 0 {
-		err = errors.New(string(body))
-	}
-
-	return
+	// JSON body present but no result_code/error field — return raw body.
+	return false, &KeeperHTTPError{StatusCode: rs.StatusCode, Body: body}
 }
 
 func GetSharedFolderKey(folders []*KeeperFolder, responseFolders []interface{}, parent string) []byte {
