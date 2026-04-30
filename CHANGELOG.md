@@ -77,6 +77,7 @@ The following functions previously returned non-nil empty stubs on decryption fa
 
 - `HTTPS_PROXY`/`HTTP_PROXY` environment variables are now honored when `ProxyUrl` is not explicitly set, matching standard `net/http` behavior. Previously these variables were silently ignored. (KSM-912)
 - HTTP status code is now included in the caller-returned error on the JSON-error path. Previously it appeared only in the log line and the non-JSON fallback; callers on the common 4xx/5xx JSON path received no status code in `err.Error()`. (KSM-919)
+- The offline-fallback cache is now consulted on network-level errors (DNS failure, connection refused, TLS failure, timeout) in addition to non-200 HTTP responses. Previously the cache was bypassed entirely when the request failed before receiving a response, providing no resilience against the most common outage mode. A warning is logged when cached records are served. (KSM-921)
 - Replaced `strings.Cut()` (Go 1.18+) with `strings.SplitN()` throughout. Users on Go 1.16 or 1.17 would have seen build failures with the previous code.
 
 ---
