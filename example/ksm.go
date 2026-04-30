@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"time"
 
@@ -33,10 +32,16 @@ func main() {
 
 		for i, f := range r.Files {
 			klog.Printf("\t\tfile #%d -> name: %s", i, f.Name)
-			f.SaveFile("/tmp/"+f.Name, true)
+			if err := f.SaveFile("/tmp/"+f.Name, true); err != nil {
+				klog.Error("SaveFile: " + err.Error())
+			}
 		}
 	}
 
+	if len(allRecords) == 0 {
+		klog.Info("No records returned")
+		os.Exit(0)
+	}
 	recToUpdate := allRecords[0]
 
 	passwordField := map[string]interface{}{}
@@ -45,7 +50,7 @@ func main() {
 	}
 
 	if len(passwordField) > 0 {
-		newPassword := fmt.Sprintf("New Password from SDK Test - " + time.Now().Format(time.RFC850))
+		newPassword := "New Password from SDK Test - " + time.Now().Format(time.RFC850)
 		recToUpdate.SetPassword(newPassword)
 		if err := sm.Save(recToUpdate); err != nil {
 			klog.Error("error saving record: " + err.Error())

@@ -4,7 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -24,11 +24,13 @@ var (
 	MockResponseQueue mockResponseQueue = mockResponseQueue{}
 	context           *core.Context     = &core.Context{}
 	Ctx               **core.Context    = &context
+	mockTransport     http.RoundTripper // Preserve mock transport across resets
 )
 
 func ResetMockResponseQueue() {
 	MockResponseQueue = mockResponseQueue{}
-	context = &core.Context{}
+	// Preserve Transport when resetting context
+	context = &core.Context{Transport: mockTransport}
 	Ctx = &context
 }
 
@@ -38,7 +40,13 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalln("failed to parse httptest.Server URL:", err)
 	}
-	http.DefaultClient.Transport = RewriteTransport{URL: u}
+
+	// Inject mock transport into Context for test isolation
+	mockTransport = RewriteTransport{URL: u}
+	context.Transport = mockTransport
+
+	// Keep DefaultClient.Transport for backward compatibility with any direct http calls
+	http.DefaultClient.Transport = mockTransport
 
 	retCode := m.Run()
 
@@ -55,14 +63,14 @@ type MockFlags struct {
 
 // MockResponse represents a response for the mock server to serve
 type MockResponse struct {
-	StatusCode int
-	Headers    http.Header
-	Content    []byte
-
-	Records map[string]interface{}
-	Folders map[string]interface{}
-	Reason  string
-	Flags   *MockFlags
+	StatusCode      int
+	Headers         http.Header
+	Content         []byte
+	Records         map[string]interface{}
+	Folders         map[string]interface{}
+	Reason          string
+	Flags           *MockFlags
+	EncryptedAppKey string // when non-empty, overrides the default "" in Dump()
 }
 
 func NewMockResponse(content []byte, statusCode int, flags *MockFlags) *MockResponse {
@@ -106,7 +114,7 @@ func (m *MockResponse) Dump(secret []byte, flags *MockFlags) map[string]interfac
 	}
 
 	response := map[string]interface{}{
-		"encryptedAppKey": "",
+		"encryptedAppKey": m.EncryptedAppKey,
 		"folders":         folders,
 		"records":         records,
 	}
@@ -196,7 +204,13 @@ func NewMockHttpServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatal("failed to parse httptest.Server URL:", err)
 	}
-	http.DefaultClient.Transport = RewriteTransport{URL: u}
+
+	// Inject mock transport into Context for test isolation
+	mockTransport = RewriteTransport{URL: u}
+	context.Transport = mockTransport
+
+	// Keep DefaultClient.Transport for backward compatibility
+	http.DefaultClient.Transport = mockTransport
 	return s
 }
 
@@ -205,7 +219,7 @@ func TestMockHttpServer(t *testing.T) {
 	MockResponseQueue.AddMockResponse(NewMockResponse([]byte("TEST"), 200, nil))
 	if resp, err := http.Get("https://127.0.0.1/test"); err != nil {
 		t.Fatal("failed to send first request:", err)
-	} else if body, err := ioutil.ReadAll(resp.Body); err != nil || string(body) != "TEST" {
+	} else if body, err := io.ReadAll(resp.Body); err != nil || string(body) != "TEST" {
 		t.Fatal("failed to read first request:", err)
 	}
 }
@@ -235,17 +249,21 @@ func GetRandomUid() (uid string, err error) {
 }
 
 type MockFolder struct {
-	Uid     string
-	Records map[string]interface{}
+	Uid        string
+	Records    map[string]interface{}
+	Key        []byte // distinct folder key, encrypted with app key when dumped
+	CorruptKey bool   // when set, folderKey field is random bytes so key decryption fails
 }
 
 func NewMockFolder(uid string) *MockFolder {
 	if strings.TrimSpace(uid) == "" {
 		uid, _ = GetRandomUid()
 	}
+	key, _ := core.GetRandomBytes(32)
 	return &MockFolder{
 		Uid:     uid,
 		Records: map[string]interface{}{},
+		Key:     key,
 	}
 }
 
@@ -258,13 +276,20 @@ func (f *MockFolder) AddRecord(title, recordType, uid string, record *MockRecord
 }
 
 func (f *MockFolder) Dump(secret []byte, flags *MockFlags) map[string]interface{} {
-	encFolderKey, _ := core.EncryptAesGcm(secret, secret)
-	folderKey := core.BytesToBase64(encFolderKey)
+	var folderKey string
+	if f.CorruptKey {
+		junk, _ := core.GetRandomBytes(48)
+		folderKey = core.BytesToBase64(junk)
+	} else {
+		encFolderKey, _ := core.EncryptAesGcm(f.Key, secret)
+		folderKey = core.BytesToBase64(encFolderKey)
+	}
 
 	records := []interface{}{}
 	for _, record := range f.Records {
 		rec := record.(*MockRecord)
-		recDump := rec.Dump(secret, flags)
+		// Encrypt records with the folder key, not the app key.
+		recDump := rec.Dump(f.Key, flags)
 		records = append(records, recDump)
 	}
 
@@ -278,15 +303,16 @@ func (f *MockFolder) Dump(secret []byte, flags *MockFlags) map[string]interface{
 }
 
 type MockFile struct {
-	Uid          string
-	SecretUsed   []byte
-	Name         string
-	Title        string
-	ContentType  string
-	Url          string
-	Content      []byte
-	Size         int
-	LastModified int
+	Uid            string
+	SecretUsed     []byte
+	Name           string
+	Title          string
+	ContentType    string
+	Url            string
+	Content        []byte
+	Size           int
+	LastModified   int
+	CorruptFileKey bool // when set, fileKey field is random bytes so key decryption fails
 }
 
 func NewMockFile(name, title, contentType, url string, content []byte, lastModified int) *MockFile {
@@ -346,8 +372,14 @@ func (f *MockFile) Dump(secret []byte, flags *MockFlags) map[string]interface{} 
 	encData, _ := core.EncryptAesGcm([]byte(data), secret)
 	recordData := core.BytesToBase64(encData)
 
-	encFileKey, _ := core.EncryptAesGcm(secret, secret)
-	fileKey := core.BytesToBase64(encFileKey)
+	var fileKey string
+	if f.CorruptFileKey {
+		junk, _ := core.GetRandomBytes(48)
+		fileKey = core.BytesToBase64(junk)
+	} else {
+		encFileKey, _ := core.EncryptAesGcm(secret, secret)
+		fileKey = core.BytesToBase64(encFileKey)
+	}
 
 	fileData := map[string]interface{}{
 		"fileUid":      f.Uid,
@@ -369,6 +401,10 @@ type MockRecord struct {
 	Files        map[string]interface{}
 	Fields       []map[string]interface{}
 	CustomFields []map[string]interface{}
+	FolderUid    string // when set, added to Dump() output and FolderKey used for encryption
+	FolderKey    []byte // when set, used instead of secret for record key and data encryption
+	CorruptData  bool   // when set, data field is random bytes so AES-GCM decryption fails
+	CorruptKey   bool   // when set, recordKey field is random bytes so key decryption fails
 }
 
 func NewMockRecord(recordType, uid, title string) *MockRecord {
@@ -533,11 +569,30 @@ func (r *MockRecord) Dump(secret []byte, flags *MockFlags) map[string]interface{
 	}
 
 	jsonData := core.DictToJson(dataMap)
-	encData, _ := core.EncryptAesGcm([]byte(jsonData), secret)
-	recordData := core.BytesToBase64(encData)
 
-	recKey, _ := core.EncryptAesGcm(secret, secret)
-	recordKey := core.BytesToBase64(recKey)
+	// Use folder key when present (simulates record in a shared folder).
+	encKey := secret
+	if len(r.FolderKey) > 0 {
+		encKey = r.FolderKey
+	}
+
+	var recordData string
+	if r.CorruptData {
+		junk, _ := core.GetRandomBytes(48)
+		recordData = core.BytesToBase64(junk)
+	} else {
+		encData, _ := core.EncryptAesGcm([]byte(jsonData), encKey)
+		recordData = core.BytesToBase64(encData)
+	}
+
+	var recordKey string
+	if r.CorruptKey {
+		junk, _ := core.GetRandomBytes(48)
+		recordKey = core.BytesToBase64(junk)
+	} else {
+		recKey, _ := core.EncryptAesGcm(encKey, encKey)
+		recordKey = core.BytesToBase64(recKey)
+	}
 
 	data := map[string]interface{}{
 		"recordUid":  r.Uid,
@@ -545,6 +600,9 @@ func (r *MockRecord) Dump(secret []byte, flags *MockFlags) map[string]interface{
 		"data":       recordData,
 		"isEditable": r.IsEditable,
 		"files":      files,
+	}
+	if r.FolderUid != "" {
+		data["folderUid"] = r.FolderUid
 	}
 
 	return data
