@@ -816,6 +816,15 @@ func (c *SecretsManager) PostQuery(path string, payload interface{}) (body []byt
 
 		ksmRs, err = c.PostFunction(url, transmissionKey, encryptedPayloadAndSignature, c.VerifySslCerts)
 		if err != nil {
+			if c.cache != nil && path == "get_secret" {
+				if cachedData, cerr := c.cache.GetCachedValue(); cerr == nil && len(cachedData) >= Aes256KeySize {
+					klog.Warning(fmt.Sprintf("network error contacting Keeper API (%v); serving cached records", err))
+					transmissionKey.Key = cachedData[:Aes256KeySize]
+					data := cachedData[Aes256KeySize:]
+					ksmRs = NewKsmHttpResponse(200, data, nil)
+					break
+				}
+			}
 			return nil, errors.New("error during POST request: " + err.Error())
 		}
 
