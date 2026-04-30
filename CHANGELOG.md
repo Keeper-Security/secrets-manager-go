@@ -95,7 +95,7 @@ The following functions previously returned non-nil empty stubs on decryption fa
 
 ### Documentation and Examples
 
-- New `example/custom-cache/` demonstrates a complete working TTLCache implementation using the `ICache` interface. Godoc comments added to `ICache` and `IKeyValueStorage`. (KSM-658)
+- `example/custom-cache/` updated to demonstrate offline-fallback semantics: the first call populates the cache from the live API; a second call against an unreachable API returns the cached records; after `Purge()` the original network error surfaces. Package godoc and README updated to clarify that `ICache` is an offline resilience mechanism, not a request-rate limiter. (KSM-920, builds on KSM-658)
 
 ---
 

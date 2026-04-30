@@ -1,18 +1,26 @@
-// Package main demonstrates how to implement a custom ICache for the
-// Keeper Secrets Manager Go SDK.
+// Package main demonstrates the offline-fallback behavior of the ICache interface
+// in the Keeper Secrets Manager Go SDK.
 //
-// This example implements a thread-safe in-memory cache with a configurable
-// TTL (time-to-live). When the cached value expires, GetCachedValue returns
-// nil so the SDK performs a fresh API request and repopulates the cache.
+// The SDK cache is an offline resilience mechanism, not a request-rate limiter.
+// The SDK always contacts the Keeper API on every call. After a successful 200
+// response, it writes the encrypted payload to ICache.SaveCachedValue. When the
+// API is unreachable — connection refused, DNS failure, TLS error, timeout, or
+// a non-200 HTTP response — the SDK reads ICache.GetCachedValue and, if a prior
+// payload exists, decrypts and returns those records instead of surfacing the
+// error. A warning is logged when cached records are served.
 //
-// To run this example, first provide a valid ksm-config.json in the working
-// directory (created on first run using a one-time access token), then:
+// The TTL on TTLCache below controls how stale the offline copy is allowed to
+// be, not how frequently the SDK contacts the API.
+//
+// To run this example, provide a valid ksm-config.json in the working directory
+// (generated on first run with a one-time token), then:
 //
 //	go run main.go
 package main
 
 import (
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -20,10 +28,10 @@ import (
 	klog "github.com/keeper-security/secrets-manager-go/core/logger"
 )
 
-// TTLCache is a thread-safe, in-memory ICache implementation that discards
-// cached values after a configured duration. This is useful for applications
-// that need to limit API call frequency while ensuring the cache does not
-// serve stale data indefinitely.
+// TTLCache is a thread-safe, in-memory ICache that discards cached values after
+// a configured duration. Use this when you want the offline fallback to expire
+// after a known staleness window — for example, 5 minutes means the SDK will
+// never serve records older than 5 minutes when the API is unreachable.
 type TTLCache struct {
 	mu     sync.RWMutex
 	data   []byte
@@ -32,20 +40,16 @@ type TTLCache struct {
 }
 
 // NewTTLCache creates a TTLCache with the given time-to-live duration.
-// After ttl elapses, GetCachedValue returns nil and the SDK re-fetches
-// from the Keeper API.
 func NewTTLCache(ttl time.Duration) *TTLCache {
 	return &TTLCache{ttl: ttl}
 }
 
-// SaveCachedValue stores a defensive copy of the encrypted payload and
-// resets the expiry timer. The SDK calls this after each successful API
-// response — implementations must not modify the slice in place.
+// SaveCachedValue stores a defensive copy of the encrypted payload and resets
+// the expiry timer. The SDK calls this after each successful API response.
 func (c *TTLCache) SaveCachedValue(data []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Store a copy so the SDK can safely reuse its original buffer.
 	buf := make([]byte, len(data))
 	copy(buf, data)
 	c.data = buf
@@ -53,21 +57,20 @@ func (c *TTLCache) SaveCachedValue(data []byte) error {
 	return nil
 }
 
-// GetCachedValue returns the stored payload if it has not expired.
-// Returning nil (with a nil error) signals a cache miss: the SDK will
-// perform a fresh API request and call SaveCachedValue with the result.
+// GetCachedValue returns the stored payload if it has not expired. Returning
+// nil signals a cache miss; the SDK will surface the original API error.
 func (c *TTLCache) GetCachedValue() ([]byte, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	if len(c.data) == 0 || time.Now().After(c.expiry) {
-		return nil, nil // cache miss or expired
+		return nil, nil
 	}
 	return c.data, nil
 }
 
-// Purge clears the cached value and resets the expiry. The SDK calls this
-// when it detects the cache is stale or on explicit invalidation.
+// Purge clears the stored payload. Call this to force the next offline-fallback
+// attempt to surface the real error rather than serve stale records.
 func (c *TTLCache) Purge() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -80,36 +83,56 @@ func (c *TTLCache) Purge() error {
 func main() {
 	klog.SetLogLevel(klog.InfoLevel)
 
-	// Initialize the Secrets Manager client.
-	// One-time tokens can only be used once. After the first run, use only Config:
-	//   sm := ksm.NewSecretsManager(&ksm.ClientOptions{
-	//       Token:  "US:ONE_TIME_TOKEN_BASE64",
-	//       Config: ksm.NewFileKeyValueStorage("ksm-config.json"),
-	//   })
+	cache := NewTTLCache(5 * time.Minute)
+
+	// ── Call 1: normal API request ───────────────────────────────────────────
+	// The SDK contacts the Keeper API, receives a 200, and writes the encrypted
+	// payload to cache.SaveCachedValue.
+	klog.Info("Call 1 — normal API request; cache will be populated on success")
 	sm := ksm.NewSecretsManager(&ksm.ClientOptions{
 		Config: ksm.NewFileKeyValueStorage("ksm-config.json"),
 	})
+	sm.SetCache(cache)
 
-	// Attach the custom TTL cache. The SDK will call SaveCachedValue after
-	// each API response and GetCachedValue at the start of each request.
-	// Adjust the TTL to balance freshness against API call frequency.
-	sm.SetCache(NewTTLCache(5 * time.Minute))
-
-	// First call — cache is empty, SDK fetches from Keeper API.
-	klog.Info("First GetSecrets call (cache miss expected)")
 	secrets, err := sm.GetSecrets([]string{})
 	if err != nil {
-		klog.Error("error retrieving secrets: " + err.Error())
-		return
+		klog.Error("call 1 failed: " + err.Error())
+		os.Exit(1)
 	}
-	fmt.Printf("Retrieved %d secret(s)\n", len(secrets))
+	fmt.Printf("Call 1: retrieved %d secret(s) from the API\n", len(secrets))
 
-	// Second call within the TTL window — served from cache, no API request.
-	klog.Info("Second GetSecrets call (cache hit expected within TTL)")
-	secrets, err = sm.GetSecrets([]string{})
+	// ── Call 2: API unreachable, cache populated ─────────────────────────────
+	// A new client is pointed at an invalid hostname to force a DNS failure.
+	// The SDK cannot reach the API, consults the cache, finds the prior payload,
+	// and returns the same records. A WARNING line is logged.
+	klog.Info("Call 2 — API unreachable (bad hostname); expect cached records")
+	smOffline := ksm.NewSecretsManager(&ksm.ClientOptions{
+		Config:   ksm.NewFileKeyValueStorage("ksm-config.json"),
+		Hostname: "keepersecurity.invalid", // guaranteed NXDOMAIN
+	})
+	smOffline.SetCache(cache)
+
+	secrets, err = smOffline.GetSecrets([]string{})
 	if err != nil {
-		klog.Error("error retrieving secrets: " + err.Error())
-		return
+		klog.Error("call 2 failed unexpectedly (cache should have served records): " + err.Error())
+		os.Exit(1)
 	}
-	fmt.Printf("Retrieved %d secret(s) (from cache)\n", len(secrets))
+	fmt.Printf("Call 2: retrieved %d secret(s) from cache (API was unreachable)\n", len(secrets))
+
+	// ── Call 3: cache purged, API still unreachable ──────────────────────────
+	// After Purge(), GetCachedValue returns nil. The SDK has no fallback and
+	// surfaces the original network error.
+	klog.Info("Call 3 — cache purged, API still unreachable; expect network error")
+	if err := cache.Purge(); err != nil {
+		klog.Error("purge failed: " + err.Error())
+		os.Exit(1)
+	}
+
+	_, err = smOffline.GetSecrets([]string{})
+	if err != nil {
+		fmt.Printf("Call 3: got expected error (cache empty + API unreachable): %v\n", err)
+	} else {
+		klog.Error("call 3 should have returned an error but did not")
+		os.Exit(1)
+	}
 }

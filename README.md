@@ -181,13 +181,15 @@ secretsManager.Save(secretToUpdate)
 
 ## Custom Cache
 
-The SDK supports pluggable caching through the `ICache` interface. A custom cache lets you control where and how long API responses are stored — useful for multi-instance applications sharing a Redis cache, applying custom TTL policies, or adding cache-hit logging.
+The SDK supports pluggable caching through the `ICache` interface. The cache is an **offline resilience mechanism**, not a request-rate limiter. The SDK always contacts the Keeper API on every call. After a successful response it writes the encrypted payload to `SaveCachedValue`. When the API is unreachable (DNS failure, connection refused, TLS error, timeout, or non-200 response), the SDK calls `GetCachedValue` and — if a prior payload exists — decrypts and returns those records instead of surfacing the error. A warning is logged when cached records are served.
+
+Common uses: multi-instance applications sharing a Redis cache, applying a custom staleness window, or adding cache-event logging.
 
 ```go
 type ICache interface {
     SaveCachedValue(data []byte) error  // called after each successful API response
     GetCachedValue() ([]byte, error)    // return nil, nil on cache miss or expiry
-    Purge() error                        // called when the SDK invalidates the cache
+    Purge() error                        // clear the cache on explicit invalidation
 }
 ```
 
@@ -195,14 +197,14 @@ The data passed to `SaveCachedValue` is already encrypted by the SDK — impleme
 
 Register a custom cache after creating the client:
 
-```golang
+```go
 sm := ksm.NewSecretsManager(&ksm.ClientOptions{
     Config: ksm.NewFileKeyValueStorage("ksm-config.json"),
 })
 sm.SetCache(myCustomCache)
 ```
 
-See [`example/custom-cache/`](example/custom-cache/) for a complete working implementation of a thread-safe in-memory cache with configurable TTL expiry.
+See [`example/custom-cache/`](example/custom-cache/) for a complete working demonstration: the first call populates the cache from the live API; subsequent calls with an unreachable API serve records from the cache; after `Purge()` the original network error surfaces.
 
 # Change Log
 
@@ -228,6 +230,11 @@ See [`example/custom-cache/`](example/custom-cache/) for a complete working impl
 * KSM-913 - Return nil from NewFolderFromJson/NewKeeperFolder when folder key/name decryption fails
 * KSM-914 - Return nil from NewKeeperFileFromJson when file key decryption fails
 * KSM-916 - Return error from GetSecrets when app key decryption fails in just-bound flow
+* KSM-917 - Return nil from NewKeeperFolder when CBC-decrypted folder name fails json.Unmarshal
+* KSM-918 - Return error from SaveFile/DownloadFile/DownloadFileByTitle instead of bool
+* KSM-919 - Expose HTTP status code via KeeperHTTPError on JSON-error path (errors.As support)
+* KSM-920 - Update custom-cache example to demonstrate offline-fallback semantics
+* KSM-921 - Consult cache on network-level errors (DNS failure, connection refused, timeout)
 
 ## 1.6.5
 
