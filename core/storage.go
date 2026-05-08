@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +17,13 @@ const (
 	DEFAULT_CONFIG_PATH string = "client-config.json"
 )
 
+// IKeyValueStorage defines the interface for persisting SDK configuration
+// (credentials, server keys, client identity). Implement this interface to
+// store configuration in a custom backend such as a database, secrets vault,
+// or encrypted cloud store. Pass your implementation via [ClientOptions.Config].
+//
+// Built-in implementations: [NewFileKeyValueStorage] (JSON file, default) and
+// [NewMemoryKeyValueStorage] (in-memory, useful for testing).
 type IKeyValueStorage interface {
 	ReadStorage() map[string]interface{}
 	SaveStorage(updatedConfig map[string]interface{})
@@ -36,7 +42,7 @@ type fileKeyValueStorage struct {
 
 func (f *fileKeyValueStorage) ReadStorage() map[string]interface{} {
 	f.createConfigFileIfMissing()
-	content, err := ioutil.ReadFile(f.ConfigPath)
+	content, err := os.ReadFile(f.ConfigPath)
 	if err != nil {
 		klog.Error("Unable to open file: " + f.ConfigPath + " Error: " + err.Error())
 		return map[string]interface{}{}
@@ -81,7 +87,8 @@ func (f *fileKeyValueStorage) SaveStorage(updatedConfig map[string]interface{}) 
 		klog.Error("Error writing JSON: " + err.Error())
 		return
 	}
-	if err := ioutil.WriteFile(f.ConfigPath, content, 0666); err != nil {
+	// Create file with secure permissions (0600) - owner read/write only
+	if err := os.WriteFile(f.ConfigPath, content, 0600); err != nil {
 		klog.Error("Error writing JSON configuration file: " + err.Error())
 	}
 }
@@ -151,7 +158,8 @@ func (f *fileKeyValueStorage) createConfigFileIfMissing() {
 			klog.Error("Error creating folders: " + err.Error())
 		}
 
-		if c, err := os.Create(f.ConfigPath); err == nil {
+		// Create file with secure permissions (0600) - owner read/write only
+		if c, err := os.OpenFile(f.ConfigPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600); err == nil {
 			defer c.Close()
 			if _, err := c.WriteString("{}"); err != nil {
 				klog.Error("Failed to write config content: " + err.Error())

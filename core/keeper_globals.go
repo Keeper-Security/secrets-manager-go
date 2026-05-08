@@ -8,9 +8,9 @@ import (
 )
 
 const (
-	versionMajor                 string = "16"
-	version                      string = "16.6.4"
-	keeperSecretsManagerClientId string = "mg16.6.4" // Golang client ID starts with "mg" + version
+	versionMajor                 string = "17"
+	version                      string = "17.0.0"
+	keeperSecretsManagerClientId string = "mg17.0.0" // Golang client ID starts with "mg" + version
 	defaultKeeperHostname        string = "keepersecurity.com"
 	clientIdHashTag              string = "KEEPER_SECRETS_MANAGER_CLIENT_ID" // Tag for hashing the client key to client id
 )
@@ -65,5 +65,6 @@ var (
 		"15": "BDKyWBvLbyZ-jMueORl3JwJnnEpCiZdN7yUvT0vOyjwpPBCDf6zfL4RWzvSkhAAFnwOni_1tQSl8dfXHbXqXsQ8",
 		"16": "BDXyZZnrl0tc2jdC5I61JjwkjK2kr7uet9tZjt8StTiJTAQQmnVOYBgbtP08PWDbecxnHghx3kJ8QXq1XE68y8c",
 		"17": "BFX68cb97m9_sweGdOVavFM3j5ot6gveg6xT4BtGahfGhKib-zdZyO9pwvv1cBda9ahkSzo1BQ4NVXp9qRyqVGU",
+		"18": "BNhngQqTT1bPKxGuB6FhbPTAeNVFl8PKGGSGo5W06xWIReutm6ix6JPivqnbvkydY-1uDQTr-5e6t70G01Bb5JA",
 	}
 )

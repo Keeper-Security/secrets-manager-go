@@ -148,7 +148,52 @@ secretToUpdate.SetPassword("NewPassword123$")
 secretsManager.Save(secretToUpdate)
 ```
 
+## Custom Cache
+
+The SDK supports pluggable caching through the `ICache` interface. A custom cache lets you control where and how long API responses are stored — useful for multi-instance applications sharing a Redis cache, applying custom TTL policies, or adding cache-hit logging.
+
+```go
+type ICache interface {
+    SaveCachedValue(data []byte) error  // called after each successful API response
+    GetCachedValue() ([]byte, error)    // return nil, nil on cache miss or expiry
+    Purge() error                        // called when the SDK invalidates the cache
+}
+```
+
+The data passed to `SaveCachedValue` is already encrypted by the SDK — implementations do not need additional encryption.
+
+Register a custom cache after creating the client:
+
+```golang
+sm := ksm.NewSecretsManager(&ksm.ClientOptions{
+    Config: ksm.NewFileKeyValueStorage("ksm-config.json"),
+})
+sm.SetCache(myCustomCache)
+```
+
+See [`example/custom-cache/`](../example/custom-cache/) for a complete working implementation of a thread-safe in-memory cache with configurable TTL expiry.
+
 # Change Log
+
+## 1.7.0
+
+* KSM-532 - Add proxy support
+* KSM-565 - Add parsing for KSM tokens with prefix
+* KSM-583 - Fix SetNotes
+* KSM-616 - Remove deprecated ioutil dependency
+* KSM-626 - Add GraphSync links
+* KSM-632 - Add links2Remove parameter for files removal
+* KSM-663 - Handle broken records, files, and folders
+* KSM-665 - Add HTTP Status Code to the error messages
+* KSM-701 - Write client-config.json with user-only permissions
+* KSM-658 - Add custom cache example and document ICache interface
+* KSM-736 - Fix notation lookup with record shortcuts (duplicate UID bug)
+* KSM-745 - Add transmission public key #18 for Gov Cloud Dev support
+
+## 1.6.5
+
+* KSM-565 - Added parsing for KSM tokens with prefix
+* KSM-616 - Removed deprecated ioutil dependency and upgarded to Go 1.16
 
 ## 1.6.4
 

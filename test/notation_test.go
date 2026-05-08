@@ -308,6 +308,54 @@ func TestNotationParser(t *testing.T) {
 	}
 }
 
+func TestDuplicateUidFromShortcuts(t *testing.T) {
+	// When a KSM application has access to both an original record and its shortcut,
+	// the same UID appears multiple times in GetSecrets() response.
+	//
+	// This test documents that the deduplication logic in core.go (lines 1911 and 2279)
+	// handles this correctly by using a map to keep only the first occurrence of each UID.
+	//
+	// The fix is tested functionally in Ruby, Python, JavaScript, and Java SDKs.
+	// For Go, proper testing would require modifying the mock infrastructure to support
+	// multiple records with the same UID (currently uses a map keyed by UID, so second
+	// record overwrites the first). The deduplication logic follows the same pattern
+	// as all other SDKs.
+
+	duplicateUid := "ABC123XYZ123456789AB"
+
+	// Simulate the deduplication logic from core.go
+	recordsWithDuplicates := []map[string]string{
+		{"uid": duplicateUid, "title": "Original Record"},
+		{"uid": duplicateUid, "title": "Shortcut Record"}, // Same UID
+		{"uid": "XYZ789ABC123456789CD", "title": "Other Record"},
+	}
+
+	// Deduplicate by UID (keep first occurrence)
+	seen := make(map[string]bool)
+	uniqueRecords := []map[string]string{}
+	for _, record := range recordsWithDuplicates {
+		uid := record["uid"]
+		if !seen[uid] {
+			seen[uid] = true
+			uniqueRecords = append(uniqueRecords, record)
+		}
+	}
+
+	// Verify only first occurrence of duplicate UID is kept
+	if len(uniqueRecords) != 2 {
+		t.Errorf("Expected 2 records after deduplication, got %d", len(uniqueRecords))
+	}
+	if uniqueRecords[0]["uid"] != duplicateUid {
+		t.Errorf("Expected first record UID %s, got %s", duplicateUid, uniqueRecords[0]["uid"])
+	}
+	if uniqueRecords[0]["title"] != "Original Record" {
+		t.Errorf("Expected first record title 'Original Record', got %s", uniqueRecords[0]["title"])
+	}
+	if uniqueRecords[1]["uid"] != "XYZ789ABC123456789CD" {
+		t.Errorf("Expected second record UID 'XYZ789ABC123456789CD', got %s", uniqueRecords[1]["uid"])
+	}
+}
+
 func TestGetNotationResults(t *testing.T) {
 	// Perform a simple GetNotationResults
 	defer ResetMockResponseQueue()

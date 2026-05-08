@@ -10,7 +10,15 @@
 
 This library provides interface to Keeper Secrets Manager and can be used to access your Keeper vault, read and update existing records, rotate passwords and more. Keeper Secrets Manager is an open source project with contributions from Keeper's engineering team and partners.
 
-## Features:
+## Features
+
+- Zero-knowledge client-side encryption (AES-256-GCM, ECDH)
+- Read, create, update, and delete vault records and files
+- HTTP proxy support via `ClientOptions.ProxyUrl` or `HTTPS_PROXY`/`HTTP_PROXY` env vars
+- Regional token support (`US:`, `EU:`, `AU:`, `GOV:`, `JP:`, `CA:`)
+- Pluggable caching via the `ICache` interface
+- No external dependencies (Go standard library only)
+- Requires Go 1.16+
 
 ## Obtain a One-Time Access Token
 Keeper Secrets Manager authenticates your API requests using advanced encryption that uses locally stored private key, device id and client id.
@@ -67,7 +75,11 @@ func main() {
 	// sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: ksm.NewFileKeyValueStorage("ksm-config.json")})
 
 	// Retrieve all records
-	allRecords, _ := sm.GetSecrets([]string{})
+	allRecords, err := sm.GetSecrets([]string{})
+	if err != nil || len(allRecords) == 0 {
+		print("No records found")
+		return
+	}
 
 	// Get password from first record:
 	password := allRecords[0].Password()
@@ -121,10 +133,27 @@ Listed in priority order
 
 - `clientKey` - One Time Access Token used during initialization
 - `hostname` - Keeper Backend host. Available values:
-    - `keepersecurity.com`
-    - `keepersecurity.eu`
-    - `keepersecurity.com.au`
-    - `govcloud.keepersecurity.us`
+    - `keepersecurity.com` (US)
+    - `keepersecurity.eu` (EU)
+    - `keepersecurity.com.au` (AU)
+    - `govcloud.keepersecurity.us` (GOV)
+    - `keepersecurity.jp` (JP)
+    - `keepersecurity.ca` (CA)
+
+Alternatively, pass a regional token (e.g. `US:ONE_TIME_TOKEN`) and the hostname is set automatically.
+
+### HTTP Proxy
+
+Set `ClientOptions.ProxyUrl` to route SDK traffic through a proxy:
+
+```go
+sm := ksm.NewSecretsManager(&ksm.ClientOptions{
+    Config:   ksm.NewFileKeyValueStorage("ksm-config.json"),
+    ProxyUrl: "http://proxy.example.com:8080",
+})
+```
+
+If `ProxyUrl` is not set, the standard `HTTPS_PROXY` and `HTTP_PROXY` environment variables are honored automatically.
 
 ## Adding more records or shared folders to the Application
 
@@ -150,7 +179,67 @@ secretToUpdate.SetPassword("NewPassword123$")
 secretsManager.Save(secretToUpdate)
 ```
 
+## Custom Cache
+
+The SDK supports pluggable caching through the `ICache` interface. The cache is an **offline resilience mechanism**, not a request-rate limiter. The SDK always contacts the Keeper API on every call. After a successful response it writes the encrypted payload to `SaveCachedValue`. When the API is unreachable (DNS failure, connection refused, TLS error, timeout, or non-200 response), the SDK calls `GetCachedValue` and — if a prior payload exists — decrypts and returns those records instead of surfacing the error. A warning is logged when cached records are served.
+
+Common uses: multi-instance applications sharing a Redis cache, applying a custom staleness window, or adding cache-event logging.
+
+```go
+type ICache interface {
+    SaveCachedValue(data []byte) error  // called after each successful API response
+    GetCachedValue() ([]byte, error)    // return nil, nil on cache miss or expiry
+    Purge() error                        // clear the cache on explicit invalidation
+}
+```
+
+The data passed to `SaveCachedValue` is already encrypted by the SDK — implementations do not need additional encryption.
+
+Register a custom cache after creating the client:
+
+```go
+sm := ksm.NewSecretsManager(&ksm.ClientOptions{
+    Config: ksm.NewFileKeyValueStorage("ksm-config.json"),
+})
+sm.SetCache(myCustomCache)
+```
+
+See [`example/custom-cache/`](example/custom-cache/) for a complete working demonstration: the first call populates the cache from the live API; subsequent calls with an unreachable API serve records from the cache; after `Purge()` the original network error surfaces.
+
 # Change Log
+
+## 1.7.0
+
+* KSM-532 - Add proxy support
+* KSM-565 - Add parsing for KSM tokens with prefix
+* KSM-583 - Fix SetNotes
+* KSM-616 - Remove deprecated ioutil dependency
+* KSM-626 - Add GraphSync links
+* KSM-632 - Add links2Remove parameter for files removal
+* KSM-658 - Add custom cache example and document ICache interface
+* KSM-663 - Handle broken records, files, and folders
+* KSM-665 - Add HTTP Status Code to the error messages
+* KSM-701 - Write config files with secure permissions (0600)
+* KSM-736 - Fix notation lookup with record shortcuts (duplicate UID bug)
+* KSM-745 - Add transmission public key #18 for Gov Cloud Dev support
+* KSM-756 - Fix shared-folder flat records decrypting with wrong key (folder vs app key)
+* KSM-826 - Fix RecordCreate.ToDict() to always include "custom" key
+* KSM-860 - Fix RecordField JSON serialization (lowercase keys, no double-nesting)
+* KSM-911 - Skip records whose AES-GCM data decryption fails instead of returning empty stubs
+* KSM-912 - Fix proxy env var fallback (HTTPS_PROXY/HTTP_PROXY now respected)
+* KSM-913 - Return nil from NewFolderFromJson/NewKeeperFolder when folder key/name decryption fails
+* KSM-914 - Return nil from NewKeeperFileFromJson when file key decryption fails
+* KSM-916 - Return error from GetSecrets when app key decryption fails in just-bound flow
+* KSM-917 - Return nil from NewKeeperFolder when CBC-decrypted folder name fails json.Unmarshal
+* KSM-918 - Return error from SaveFile/DownloadFile/DownloadFileByTitle instead of bool
+* KSM-919 - Expose HTTP status code via KeeperHTTPError on JSON-error path (errors.As support)
+* KSM-920 - Update custom-cache example to demonstrate offline-fallback semantics
+* KSM-921 - Consult cache on network-level errors (DNS failure, connection refused, timeout)
+
+## 1.6.5
+
+* KSM-565 - Added parsing for KSM tokens with prefix
+* KSM-616 - Removed deprecated ioutil dependency and upgarded to Go 1.16
 
 ## 1.6.4
 

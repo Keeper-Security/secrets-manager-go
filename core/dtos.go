@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"path"
@@ -33,6 +33,12 @@ const (
 	FieldTokenBoth = FieldTokenType | FieldTokenLabel
 )
 
+type RecordLink struct {
+	RecordUid string `json:"recordUid"`
+	Data      string `json:"data,omitempty"`
+	Path      string `json:"path,omitempty"`
+}
+
 type Record struct {
 	RecordKeyBytes []byte
 	Uid            string
@@ -45,6 +51,7 @@ type Record struct {
 	recordType     string
 	RawJson        string
 	RecordDict     map[string]interface{}
+	Links          []RecordLink
 }
 
 func (r *Record) FolderUid() string {
@@ -151,10 +158,8 @@ func (r *Record) Notes() string {
 }
 
 func (r *Record) SetNotes(notes string) {
-	if _, ok := r.RecordDict["notes"]; ok {
-		r.RecordDict["notes"] = notes
-		r.update()
-	}
+	r.RecordDict["notes"] = notes
+	r.update()
 }
 
 func (r *Record) GetFieldsBySection(fieldSectionType FieldSectionFlag) []interface{} {
@@ -436,7 +441,8 @@ func NewRecordFromJson(recordDict map[string]interface{}, secretKey []byte, fold
 		if recordKeyBytes, err := Decrypt(recordKeyEncryptedBytes, secretKey); err == nil {
 			record.RecordKeyBytes = recordKeyBytes
 		} else {
-			klog.Error("error decrypting record key: " + err.Error() + " - Record UID: " + record.Uid)
+			klog.Error("error decrypting record key for UID " + record.Uid + ": " + err.Error())
+			return nil
 		}
 	} else {
 		//Single Record Share
@@ -449,12 +455,16 @@ func NewRecordFromJson(recordDict map[string]interface{}, secretKey []byte, fold
 			record.RawJson = recordDataJson
 			record.RecordDict = JsonToDict(record.RawJson)
 		} else {
-			klog.Error("error decrypting record data: " + err.Error())
+			klog.Error("error decrypting record data for UID " + record.Uid + ": " + err.Error())
+			return nil
 		}
 	}
 
 	if recordType, ok := record.RecordDict["type"]; ok {
 		record.recordType = recordType.(string)
+	}
+	if recordLinks, ok := recordDict["links"].([]interface{}); ok {
+		record.Links = parseRecordLinks(recordLinks)
 	}
 
 	// files
@@ -462,15 +472,48 @@ func NewRecordFromJson(recordDict map[string]interface{}, secretKey []byte, fold
 		if rfSlice, ok := recordFiles.([]interface{}); ok {
 			for i := range rfSlice {
 				if rfMap, ok := rfSlice[i].(map[string]interface{}); ok {
-					if file := NewKeeperFileFromJson(rfMap, record.RecordKeyBytes); file != nil {
-						record.Files = append(record.Files, file)
-					}
+					func() {
+						defer func() {
+							if err := recover(); err != nil {
+								if fileUid, ok := rfMap["fileUid"]; ok {
+									klog.Error(fmt.Sprintf("File %s skipped due to error: %v", fileUid, err))
+								} else {
+									klog.Error(fmt.Sprintf("File skipped due to error: %v", err))
+								}
+							}
+						}()
+						if file := NewKeeperFileFromJson(rfMap, record.RecordKeyBytes); file != nil {
+							record.Files = append(record.Files, file)
+						}
+					}()
 				}
 			}
 		}
 	}
 
 	return &record
+}
+
+func parseRecordLinks(data []interface{}) []RecordLink {
+	links := []RecordLink{}
+	for _, iLink := range data {
+		if mLink, ok := iLink.(map[string]interface{}); ok {
+			link := RecordLink{}
+			if val, ok := mLink["recordUid"].(string); ok {
+				link.RecordUid = strings.TrimSpace(val)
+			}
+			if val, ok := mLink["data"].(string); ok {
+				link.Data = val
+			}
+			if val, ok := mLink["path"].(string); ok {
+				link.Path = val
+			}
+			if link.RecordUid != "" {
+				links = append(links, link)
+			}
+		}
+	}
+	return links
 }
 
 // FindFileByTitle finds the first file with matching title
@@ -514,20 +557,20 @@ func (r *Record) FindFiles(name string) []*KeeperFile {
 	return result
 }
 
-func (r *Record) DownloadFileByTitle(title string, path string) bool {
+func (r *Record) DownloadFileByTitle(title string, path string) error {
 	if foundFile := r.FindFileByTitle(title); foundFile != nil {
 		return foundFile.SaveFile(path, false)
 	}
-	return false
+	return fmt.Errorf("no file with title %q attached to record %s", title, r.Uid)
 }
 
-func (r *Record) DownloadFile(fileUid string, path string) bool {
+func (r *Record) DownloadFile(fileUid string, path string) error {
 	for i := range r.Files {
 		if r.Files[i].Uid == fileUid {
 			return r.Files[i].SaveFile(path, false)
 		}
 	}
-	return false
+	return fmt.Errorf("no file with UID %q attached to record %s", fileUid, r.Uid)
 }
 
 func (r *Record) ToString() string {
@@ -710,6 +753,7 @@ func (r *Record) InsertField(section string, field interface{}) error {
 		return fmt.Errorf("section '%s' not found", section)
 	}
 
+	r.update()
 	return nil
 }
 
@@ -748,6 +792,7 @@ func (r *Record) UpdateField(section string, field interface{}) error {
 						for key, val := range fieldMap {
 							fmap[key] = val
 						}
+						r.update()
 						return nil
 					}
 				}
@@ -1057,8 +1102,12 @@ func NewKeeperFolder(folderMap map[string]interface{}, folderKey []byte) *Keeper
 				if err := json.Unmarshal(folderNameJson, &folderName); err == nil {
 					folder.Name = folderName.Name
 				} else {
-					klog.Error("error parsing folder name: " + err.Error())
+					klog.Error("error parsing folder name for " + folder.FolderUid + ": " + err.Error())
+					return nil
 				}
+			} else {
+				klog.Error("error decrypting folder name for " + folder.FolderUid + ": " + err.Error())
+				return nil
 			}
 		}
 	}
@@ -1097,7 +1146,8 @@ func NewFolderFromJson(folderDict map[string]interface{}, secretKey []byte) *Fol
 					}
 				}
 			} else {
-				klog.Error("error decrypting folder key: " + err.Error())
+				klog.Error("error decrypting folder key for " + folder.uid + ": " + err.Error())
+				return nil
 			}
 		}
 	} else {
@@ -1112,11 +1162,26 @@ func (f *Folder) Records() []*Record {
 	records := []*Record{}
 	if f.folderRecords != nil {
 		for _, r := range f.folderRecords {
-			if record := NewRecordFromJson(r, f.key, f.uid); record.Uid != "" {
-				records = append(records, record)
-			} else {
-				klog.Error("error parsing folder record: ", r)
-			}
+			func() {
+				defer func() {
+					if err := recover(); err != nil {
+						if uid, ok := r["recordUid"]; ok {
+							klog.Error(fmt.Sprintf("Record %s in folder %s skipped due to error: %v", uid, f.uid, err))
+						} else {
+							klog.Error(fmt.Sprintf("Record in folder %s skipped due to error: %v", f.uid, err))
+						}
+					}
+				}()
+				if record := NewRecordFromJson(r, f.key, f.uid); record != nil && record.Uid != "" {
+					records = append(records, record)
+				} else {
+					if uid, ok := r["recordUid"]; ok {
+						klog.Error(fmt.Sprintf("Record %s in folder %s skipped: decryption failed", uid, f.uid))
+					} else {
+						klog.Error(fmt.Sprintf("Record in folder %s skipped: decryption failed", f.uid))
+					}
+				}
+			}()
 		}
 	}
 	return records
@@ -1143,6 +1208,10 @@ func NewKeeperFileFromJson(fileDict map[string]interface{}, recordKeyBytes []byt
 	f := &KeeperFile{
 		F:              fileDict,
 		RecordKeyBytes: recordKeyBytes,
+	}
+
+	if len(f.DecryptFileKey()) == 0 {
+		return nil
 	}
 
 	// Set file metadata
@@ -1194,7 +1263,7 @@ func (f *KeeperFile) DecryptFileKey() []byte {
 		return fileKey
 	} else {
 		klog.Error("error decrypting file key " + fileKeyEncryptedBase64Str)
-		return []byte{}
+		return nil
 	}
 }
 
@@ -1203,6 +1272,9 @@ func (f *KeeperFile) GetMeta() map[string]interface{} {
 	if len(f.metaDict) == 0 {
 		if data, ok := f.F["data"]; ok && data != nil {
 			fileKey := f.DecryptFileKey()
+			if len(fileKey) == 0 {
+				return f.metaDict
+			}
 			dataStr := fmt.Sprintf("%v", data)
 			if metaJson, err := Decrypt(Base64ToBytes(dataStr), fileKey); err == nil {
 				f.metaDict = JsonToDict(string(metaJson[:]))
@@ -1229,9 +1301,11 @@ func (f *KeeperFile) GetFileData() []byte {
 			fileUrlStr := fmt.Sprintf("%v", fileUrl)
 			if rs, err := http.Get(fileUrlStr); err == nil {
 				defer rs.Body.Close()
-				if fileEncryptedData, err := ioutil.ReadAll(rs.Body); err == nil {
+				if fileEncryptedData, err := io.ReadAll(rs.Body); err == nil {
 					if fileData, err := Decrypt(fileEncryptedData, fileKey); err == nil {
 						f.FileData = fileData
+					} else {
+						klog.Error("error decrypting file data for " + f.Uid + ": " + err.Error())
 					}
 				}
 			}
@@ -1240,11 +1314,10 @@ func (f *KeeperFile) GetFileData() []byte {
 	return f.FileData
 }
 
-func (f *KeeperFile) SaveFile(path string, createFolders bool) bool {
-	// Save decrypted file data to the provided path
+func (f *KeeperFile) SaveFile(path string, createFolders bool) error {
 	if createFolders {
 		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			klog.Error("error creating folders " + err.Error())
+			return fmt.Errorf("error creating directory %s: %w", filepath.Dir(path), err)
 		}
 	}
 
@@ -1257,16 +1330,13 @@ func (f *KeeperFile) SaveFile(path string, createFolders bool) bool {
 	}
 
 	if !pathExists {
-		klog.Error("No such file or directory %s\nConsider using `SaveFile()` method with `createFolders=True` ", path)
-		return false
+		return fmt.Errorf("directory does not exist: %s (use createFolders=true to create it)", filepath.Dir(path))
 	}
 
-	fileData := f.GetFileData()
-	if err := ioutil.WriteFile(path, fileData, 0644); err != nil {
-		klog.Error("error savig file " + err.Error())
+	if err := os.WriteFile(path, f.GetFileData(), 0644); err != nil {
+		return fmt.Errorf("error saving file %s: %w", path, err)
 	}
-
-	return true
+	return nil
 }
 
 func (f *KeeperFile) ToString() string {
@@ -1291,7 +1361,7 @@ func GetFileForUpload(filePath, fileName, fileTitle, mimeType string) (*KeeperFi
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
 	}
-	if fileDataBytes, err := ioutil.ReadFile(filePath); err == nil {
+	if fileDataBytes, err := os.ReadFile(filePath); err == nil {
 		return &KeeperFileUpload{
 			Name:  fileName,
 			Title: fileTitle,
@@ -1312,10 +1382,10 @@ type KeeperFileData struct {
 }
 
 type RecordField struct {
-	Type     string
-	Label    string
-	Value    []interface{}
-	Required bool
+	Type     string        `json:"type"`
+	Label    string        `json:"label"`
+	Value    []interface{} `json:"value"`
+	Required bool          `json:"required"`
 }
 
 func NewRecordField(fieldType, label string, required bool, value interface{}) *RecordField {
@@ -1324,10 +1394,16 @@ func NewRecordField(fieldType, label string, required bool, value interface{}) *
 		Label:    label,
 		Required: required,
 	}
-	if iValue, ok := value.([]interface{}); ok {
-		recordField.Value = iValue
-	} else if value == nil {
+	if value == nil {
 		recordField.Value = []interface{}{}
+	} else if iValue, ok := value.([]interface{}); ok {
+		recordField.Value = iValue
+	} else if rv := reflect.ValueOf(value); rv.Kind() == reflect.Slice {
+		result := make([]interface{}, rv.Len())
+		for i := range result {
+			result[i] = rv.Index(i).Interface()
+		}
+		recordField.Value = result
 	} else {
 		recordField.Value = []interface{}{value}
 	}
@@ -1476,9 +1552,7 @@ func (r RecordCreate) ToDict() map[string]interface{} {
 	if r.Notes != "" {
 		recDict["notes"] = r.Notes
 	}
-	if len(r.Custom) > 0 {
-		recDict["custom"] = r.Custom
-	}
+	recDict["custom"] = r.Custom
 	return recDict
 }
 
