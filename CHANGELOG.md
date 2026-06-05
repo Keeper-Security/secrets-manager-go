@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+* KSM-881 - Added automatic throttle retry with exponential backoff. On HTTP 403 `{"error":"throttled"}`, PostQuery now retries up to 5 times with exponentially increasing delays (11s, 22s, 44s, 88s, 176s) plus ±25% jitter, honoring `retry_after` from the response when present; returns the new sentinel `ErrThrottled` (checkable via `errors.Is`) once retries are exhausted. Existing key-rotation retry behavior is unchanged.
+
 ## v1.7.0
 
 ### Upgrading
