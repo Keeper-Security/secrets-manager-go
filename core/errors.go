@@ -1,6 +1,14 @@
 package core
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+// ErrThrottled is returned (wrapped) by PostQuery when the Keeper backend throttles requests
+// (HTTP 403 {"error":"throttled"}) and the SDK has exhausted its automatic retries
+// (maxThrottleRetries). Callers can detect it with errors.Is(err, ErrThrottled).
+var ErrThrottled = errors.New("request throttled by Keeper backend: retries exhausted")
 
 // KeeperHTTPError is returned by PostQuery (and thus GetSecrets, GetFolders, etc.)
 // whenever the Keeper API responds with a non-200 status code.

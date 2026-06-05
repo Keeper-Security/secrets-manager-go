@@ -15,6 +15,13 @@ const (
 	clientIdHashTag              string = "KEEPER_SECRETS_MANAGER_CLIENT_ID" // Tag for hashing the client key to client id
 )
 
+// Throttle retry (KSM-876 / KSM-881). The backend throttles HTTP 403 {"error":"throttled"} per
+// clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every request).
+const (
+	maxThrottleRetries   int = 5
+	baseThrottleDelaySec int = 11 // 1s safety margin over the backend's 10s memcached TTL
+)
+
 var (
 	keeperServers = map[string]string{
 		"US":  "keepersecurity.com",
