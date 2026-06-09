@@ -179,3 +179,25 @@ func TestThrottleNonJSONNotRetried(t *testing.T) {
 		t.Errorf("want 0 sleeps, got %d", len(*delays))
 	}
 }
+
+func TestThrottleBodyNon403NotRetried(t *testing.T) {
+	// A non-403 response (e.g. 500) that happens to carry a {"error":"throttled"} body must NOT
+	// be treated as a throttle; it falls straight through to normal error handling.
+	defer ResetMockResponseQueue()
+	sm := newThrottleSM()
+	delays := captureThrottleSleeps()
+
+	body := `{"error":"throttled","message":"throttled"}`
+	MockResponseQueue.AddMockResponse(NewMockResponse([]byte(body), 500, nil))
+
+	_, err := sm.GetSecrets(nil)
+	if err == nil {
+		t.Fatal("want error, got nil")
+	}
+	if errors.Is(err, ksm.ErrThrottled) {
+		t.Error("non-403 throttled body should not be treated as a throttle")
+	}
+	if len(*delays) != 0 {
+		t.Errorf("want 0 sleeps, got %d", len(*delays))
+	}
+}
