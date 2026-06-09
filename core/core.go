@@ -864,18 +864,22 @@ func (c *SecretsManager) PostQuery(path string, payload interface{}) (body []byt
 		}
 
 		// Throttle retry with exponential backoff + jitter (KSM-876 / KSM-881). Detected before
-		// HandleHttpError so the existing key-rotation retry path is left untouched.
-		if retryAfter, throttled := parseThrottle(ksmRs.Data); throttled {
-			if throttleAttempt >= maxThrottleRetries {
-				klog.Error(fmt.Sprintf("Request throttled; exhausted %d retries", maxThrottleRetries))
-				return nil, fmt.Errorf("POST Error: %w", ErrThrottled)
+		// HandleHttpError so the existing key-rotation retry path is left untouched. Gated on the
+		// 403 status so a non-403 response (e.g. 500/502) that happens to carry a
+		// {"error":"throttled"} body is not mistaken for a throttle and retried.
+		if ksmRs.StatusCode == 403 {
+			if retryAfter, throttled := parseThrottle(ksmRs.Data); throttled {
+				if throttleAttempt >= maxThrottleRetries {
+					klog.Error(fmt.Sprintf("Request throttled; exhausted %d retries", maxThrottleRetries))
+					return nil, fmt.Errorf("POST Error: %w", ErrThrottled)
+				}
+				delay := throttleDelay(throttleAttempt, retryAfter)
+				klog.Warning(fmt.Sprintf("Request throttled (attempt %d/%d); retrying in %v",
+					throttleAttempt+1, maxThrottleRetries, delay))
+				sleep(delay)
+				throttleAttempt++
+				continue
 			}
-			delay := throttleDelay(throttleAttempt, retryAfter)
-			klog.Warning(fmt.Sprintf("Request throttled (attempt %d/%d); retrying in %v",
-				throttleAttempt+1, maxThrottleRetries, delay))
-			sleep(delay)
-			throttleAttempt++
-			continue
 		}
 
 		// Handle the error. Handler will return a retry status if it is a recoverable error.
