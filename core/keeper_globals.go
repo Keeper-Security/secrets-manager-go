@@ -19,7 +19,8 @@ const (
 // clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every request).
 const (
 	maxThrottleRetries   int = 5
-	baseThrottleDelaySec int = 11 // 1s safety margin over the backend's 10s memcached TTL
+	baseThrottleDelaySec int = 11  // 1s safety margin over the backend's 10s memcached TTL
+	maxThrottleDelaySec  int = 176 // cap on server-supplied retry_after (baseThrottleDelaySec * 2^4)
 )
 
 var (
