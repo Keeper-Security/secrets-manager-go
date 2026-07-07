@@ -938,8 +938,9 @@ func (c *SecretsManager) PostFunction(
 	return NewKsmHttpResponse(rs.StatusCode, rsBody, rs), err
 }
 
-// throttleJitter returns a jitter multiplier in [-0.25, 0.25). It is a package var so tests can pin it.
-var throttleJitter = func() float64 { return rand.Float64()*0.5 - 0.25 }
+// throttleJitter returns a jitter multiplier in [0, 0.25). One-sided so delay is always >= floor,
+// preventing a retry before the backend's 10s memcached window expires. Package var so tests can pin it.
+var throttleJitter = func() float64 { return rand.Float64() * 0.25 }
 
 // parseThrottle reports whether body is a backend throttle error (result_code/error == "throttled")
 // and returns its optional retry_after (seconds, >= 0). It returns (0, false) for any non-throttle
@@ -974,13 +975,16 @@ func parseThrottle(body []byte) (retryAfter float64, throttled bool) {
 
 // throttleDelay computes the backoff delay for a 0-based attempt: retry_after when provided (> 0),
 // otherwise exponential backoff (baseThrottleDelaySec * 2**attempt -> 11s, 22s, 44s, 88s, 176s).
-// A +/-25% jitter is applied to desynchronize concurrent clients retrying at the same time.
+// A 0 to +25% jitter is applied (one-sided so delay is always >= floor).
 func throttleDelay(attempt int, retryAfter float64) time.Duration {
 	var sec float64
 	if retryAfter > 0 {
 		sec = retryAfter
 	} else {
 		sec = float64(baseThrottleDelaySec * (1 << uint(attempt)))
+	}
+	if sec > float64(maxThrottleDelaySec) {
+		sec = float64(maxThrottleDelaySec)
 	}
 	sec += sec * throttleJitter()
 	return time.Duration(sec * float64(time.Second))
