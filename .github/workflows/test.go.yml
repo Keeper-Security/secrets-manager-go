@@ -12,8 +12,9 @@ jobs:
       contents: read
     strategy:
       matrix:
-        # Test minimum version (1.16), stable (1.20), and current (1.22)
-        go-version: [1.16.x, 1.20.x, 1.22.x]
+        # 1.16 is the floor declared in core/go.mod. 1.25 and 1.26 are the versions
+        # upstream Go still supports, so they are what consumers actually compile with.
+        go-version: [1.16.x, 1.20.x, 1.22.x, 1.25.x, 1.26.x]
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     defaults:
