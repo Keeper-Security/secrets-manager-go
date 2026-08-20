@@ -1109,9 +1109,33 @@ func (c *SecretsManager) fetchAndDecryptFolders() (folders []*KeeperFolder, err 
 	decryptedResponseStr := BytesToString(decryptedResponseBytes)
 	decryptedResponseDict := JsonToDict(decryptedResponseStr)
 
-	appKey := Base64ToBytes(c.Config.Get(KEY_APP_KEY))
-	if len(appKey) == 0 {
-		return nil, errors.New("app key is missing from the storage")
+	var appKey []byte
+	if encryptedAppKey, found := decryptedResponseDict["encryptedAppKey"]; found && encryptedAppKey != nil && fmt.Sprintf("%v", encryptedAppKey) != "" {
+		clientKey := UrlSafeStrToBytes(c.Config.Get(KEY_CLIENT_KEY))
+		if len(clientKey) == 0 {
+			return nil, errors.New("client key is missing from the storage")
+		}
+		encryptedMasterKey := UrlSafeStrToBytes(encryptedAppKey.(string))
+		if appKey, err = Decrypt(encryptedMasterKey, clientKey); err == nil {
+			if cfg := c.Config.Set(KEY_APP_KEY, BytesToBase64(appKey)); len(cfg) < 1 {
+				klog.Error("failed to set the application key")
+			}
+			c.Config.Delete(KEY_CLIENT_KEY)
+		} else {
+			return nil, fmt.Errorf("failed to decrypt the application key: %w", err)
+		}
+		if ownerPubKey, found := decryptedResponseDict[string(KEY_OWNER_PUBLIC_KEY)]; found && ownerPubKey != nil {
+			if appOwnerPublicKey := strings.TrimSpace(fmt.Sprintf("%v", ownerPubKey)); appOwnerPublicKey != "" {
+				if cfg := c.Config.Set(KEY_OWNER_PUBLIC_KEY, appOwnerPublicKey); len(cfg) < 1 {
+					klog.Error("failed to set the app owner public key - file uploads and creating new records may fail")
+				}
+			}
+		}
+	} else {
+		appKey = Base64ToBytes(c.Config.Get(KEY_APP_KEY))
+		if len(appKey) == 0 {
+			return nil, errors.New("app key is missing from the storage")
+		}
 	}
 
 	if foldersResp, found := decryptedResponseDict["folders"]; found && foldersResp != nil {
