@@ -367,7 +367,7 @@ func TestNewKeeperFolderNilOnUnmarshalFailure(t *testing.T) {
 		"folderUid": "test-folder-uid-917",
 		"data":      ksm.BytesToUrlSafeStr(encrypted),
 	}
-	if folder := ksm.NewKeeperFolder(folderMap, folderKey); folder != nil {
+	if folder := ksm.NewKeeperFolder(folderMap, folderKey, false); folder != nil {
 		t.Errorf("expected nil from NewKeeperFolder when CBC decrypts to non-JSON, got non-nil stub with Name=%q", folder.Name)
 	}
 }

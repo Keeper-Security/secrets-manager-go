@@ -8,11 +8,19 @@ import (
 )
 
 const (
-	versionMajor                 string = "17"
-	version                      string = "17.0.0"
-	keeperSecretsManagerClientId string = "mg17.0.0" // Golang client ID starts with "mg" + version
+	versionMajor                 string = "18"
+	version                      string = "18.0.0"
+	keeperSecretsManagerClientId string = "mg18.0.0" // Golang client ID starts with "mg" + version
 	defaultKeeperHostname        string = "keepersecurity.com"
 	clientIdHashTag              string = "KEEPER_SECRETS_MANAGER_CLIENT_ID" // Tag for hashing the client key to client id
+)
+
+// Throttle retry (KSM-876 / KSM-881). The backend throttles HTTP 403 {"error":"throttled"} per
+// clientId+endpoint (100 requests / 10s window; memcached TTL 10s that resets on every request).
+const (
+	maxThrottleRetries   int = 5
+	baseThrottleDelaySec int = 11  // 1s safety margin over the backend's 10s memcached TTL
+	maxThrottleDelaySec  int = 176 // cap on server-supplied retry_after (baseThrottleDelaySec * 2^4)
 )
 
 var (

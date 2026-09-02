@@ -732,12 +732,13 @@ type PamSettingsPortForward struct {
 }
 
 type PamSettingsConnection struct {
-	Protocol     string   `json:"protocol,omitempty"`
-	UserRecords  []string `json:"userRecords,omitempty"`
-	Security     string   `json:"security,omitempty"`
-	IgnoreCert   bool     `json:"ignoreCert,omitempty"`
-	ResizeMethod string   `json:"resizeMethod,omitempty"`
-	ColorScheme  string   `json:"colorScheme,omitempty"`
+	Protocol           string   `json:"protocol,omitempty"`
+	UserRecords        []string `json:"userRecords,omitempty"`
+	Security           string   `json:"security,omitempty"`
+	IgnoreCert         bool     `json:"ignoreCert,omitempty"`
+	ResizeMethod       string   `json:"resizeMethod,omitempty"`
+	ColorScheme        string   `json:"colorScheme,omitempty"`
+	DbConnectionMethod string   `json:"dbConnectionMethod,omitempty"`
 }
 
 type PamSetting struct {
