@@ -1079,10 +1079,11 @@ type KeeperFolder struct {
 	FolderUid string
 	ParentUid string
 	Name      string
+	UseGcm    bool
 }
 
-func NewKeeperFolder(folderMap map[string]interface{}, folderKey []byte) *KeeperFolder {
-	folder := KeeperFolder{FolderKey: folderKey}
+func NewKeeperFolder(folderMap map[string]interface{}, folderKey []byte, useGcm bool) *KeeperFolder {
+	folder := KeeperFolder{FolderKey: folderKey, UseGcm: useGcm}
 	if key, found := folderMap["folderUid"]; found {
 		if val, ok := key.(string); ok {
 			folder.FolderUid = val
@@ -1095,7 +1096,16 @@ func NewKeeperFolder(folderMap map[string]interface{}, folderKey []byte) *Keeper
 	}
 	if key, found := folderMap["data"]; found {
 		if val, ok := key.(string); ok {
-			if folderNameJson, err := DecryptAesCbc(UrlSafeStrToBytes(val), folderKey); err == nil {
+			// Root folders keep the existing CBC path (useGcm is always false there) -
+			// all current NSF roots have CBC-encrypted data.
+			var folderNameJson []byte
+			var decryptErr error
+			if useGcm {
+				folderNameJson, decryptErr = Decrypt(UrlSafeStrToBytes(val), folderKey)
+			} else {
+				folderNameJson, decryptErr = DecryptAesCbc(UrlSafeStrToBytes(val), folderKey)
+			}
+			if decryptErr == nil {
 				folderName := struct {
 					Name string `json:"name"`
 				}{}
@@ -1106,7 +1116,7 @@ func NewKeeperFolder(folderMap map[string]interface{}, folderKey []byte) *Keeper
 					return nil
 				}
 			} else {
-				klog.Error("error decrypting folder name for " + folder.FolderUid + ": " + err.Error())
+				klog.Error("error decrypting folder name for " + folder.FolderUid + ": " + decryptErr.Error())
 				return nil
 			}
 		}

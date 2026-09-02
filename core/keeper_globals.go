@@ -8,9 +8,9 @@ import (
 )
 
 const (
-	versionMajor                 string = "17"
-	version                      string = "17.1.0"
-	keeperSecretsManagerClientId string = "mg17.1.0" // Golang client ID starts with "mg" + version
+	versionMajor                 string = "18"
+	version                      string = "18.0.0"
+	keeperSecretsManagerClientId string = "mg18.0.0" // Golang client ID starts with "mg" + version
 	defaultKeeperHostname        string = "keepersecurity.com"
 	clientIdHashTag              string = "KEEPER_SECRETS_MANAGER_CLIENT_ID" // Tag for hashing the client key to client id
 )

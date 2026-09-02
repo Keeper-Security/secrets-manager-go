@@ -729,8 +729,10 @@ func (c *SecretsManager) prepareCreateFolderPayload(createOptions CreateOptions,
 		return nil, fmt.Errorf("unable to update folder - client Id is missing from the configuration")
 	}
 
+	// Drive (NSF) folders require AES-GCM for both the folder key wrap and folder data
+	// (KSM-1064); CBC produces "invalid sharedFolderKey" against NSF-enabled endpoints.
 	folderKey, _ := GetRandomBytes(32)
-	if encryptedFolderKey, err := EncryptAesCbc(folderKey, sharedFolderKey); err == nil {
+	if encryptedFolderKey, err := EncryptAesGcm(folderKey, sharedFolderKey); err == nil {
 		payload.SharedFolderKey = BytesToUrlSafeStr(encryptedFolderKey)
 	} else {
 		return nil, err
@@ -739,7 +741,7 @@ func (c *SecretsManager) prepareCreateFolderPayload(createOptions CreateOptions,
 	keeperFolderName := map[string]interface{}{"name": folderName}
 	folderDataJson := DictToJson(keeperFolderName)
 	folderDataBytes := []byte(folderDataJson)
-	if encryptedFolderData, err := EncryptAesCbc(folderDataBytes, folderKey); err == nil {
+	if encryptedFolderData, err := EncryptAesGcm(folderDataBytes, folderKey); err == nil {
 		payload.Data = BytesToUrlSafeStr(encryptedFolderData)
 	} else {
 		return nil, err
@@ -748,7 +750,7 @@ func (c *SecretsManager) prepareCreateFolderPayload(createOptions CreateOptions,
 	return &payload, nil
 }
 
-func (c *SecretsManager) prepareUpdateFolderPayload(folderUid string, folderName string, folderKey []byte) (res *UpdateFolderPayload, err error) {
+func (c *SecretsManager) prepareUpdateFolderPayload(folderUid string, folderName string, folderKey []byte, useGcm bool) (res *UpdateFolderPayload, err error) {
 	payload := UpdateFolderPayload{
 		ClientVersion: keeperSecretsManagerClientId,
 		ClientId:      c.Config.Get(KEY_CLIENT_ID),
@@ -758,10 +760,18 @@ func (c *SecretsManager) prepareUpdateFolderPayload(folderUid string, folderName
 	keeperFolderName := map[string]interface{}{"name": folderName}
 	folderDataJson := DictToJson(keeperFolderName)
 	folderDataBytes := []byte(folderDataJson)
-	if encryptedFolderData, err := EncryptAesCbc(folderDataBytes, folderKey); err == nil {
+	// Use the same cipher the folder was created with (KSM-1064)
+	var encryptErr error
+	var encryptedFolderData []byte
+	if useGcm {
+		encryptedFolderData, encryptErr = EncryptAesGcm(folderDataBytes, folderKey)
+	} else {
+		encryptedFolderData, encryptErr = EncryptAesCbc(folderDataBytes, folderKey)
+	}
+	if encryptErr == nil {
 		payload.Data = BytesToUrlSafeStr(encryptedFolderData)
 	} else {
-		return nil, err
+		return nil, encryptErr
 	}
 
 	if strings.TrimSpace(payload.ClientId) == "" {
@@ -1142,12 +1152,23 @@ func (c *SecretsManager) fetchAndDecryptFolders() (folders []*KeeperFolder, err 
 		if siFolders, ok := foldersResp.([]interface{}); ok {
 			for _, f := range siFolders {
 				fkey := []byte{}
+				useGcm := false
 				fmap := f.(map[string]interface{})
 				if iParent, found := fmap["parent"]; found && iParent != nil {
 					if parent, ok := iParent.(string); ok && parent != "" {
 						sharedFolderKey := GetSharedFolderKey(folders, siFolders, parent)
 						sKey := fmap["folderKey"].(string)
-						if folderKey, err := DecryptAesCbc(UrlSafeStrToBytes(sKey), sharedFolderKey); err == nil {
+						folderKeyBytes := UrlSafeStrToBytes(sKey)
+						// GCM-wrapped subfolder keys are 60 bytes (12-byte nonce + 32-byte key +
+						// 16-byte tag); legacy CBC-wrapped keys are 64 bytes (16-byte IV + 48-byte
+						// padded ciphertext) - always unambiguous, mirrors the dispatch already
+						// landed in the other KSM SDKs (KSM-1043/1058/1061/1062/1063).
+						if len(folderKeyBytes) == 60 {
+							if folderKey, err := Decrypt(folderKeyBytes, sharedFolderKey); err == nil {
+								fkey = folderKey
+								useGcm = true
+							}
+						} else if folderKey, err := DecryptAesCbc(folderKeyBytes, sharedFolderKey); err == nil {
 							fkey = folderKey
 						}
 					}
@@ -1162,7 +1183,7 @@ func (c *SecretsManager) fetchAndDecryptFolders() (folders []*KeeperFolder, err 
 					klog.Error("failed to decrypt the folder key")
 				}
 
-				folder := NewKeeperFolder(fmap, fkey)
+				folder := NewKeeperFolder(fmap, fkey, useGcm)
 				if folder != nil {
 					folders = append(folders, folder)
 				}
@@ -1794,9 +1815,11 @@ func (c *SecretsManager) UpdateFolder(folderUid, folderName string, folders []*K
 	}
 
 	folderKey := []byte{}
+	useGcm := false
 	for _, fldr := range folders {
 		if fldr.FolderUid == folderUid {
 			folderKey = fldr.FolderKey
+			useGcm = fldr.UseGcm
 			break
 		}
 	}
@@ -1805,7 +1828,7 @@ func (c *SecretsManager) UpdateFolder(folderUid, folderName string, folders []*K
 		return errors.New("Unable to update folder - folder key for " + folderUid + " not found")
 	}
 
-	payload, err := c.prepareUpdateFolderPayload(folderUid, folderName, folderKey)
+	payload, err := c.prepareUpdateFolderPayload(folderUid, folderName, folderKey, useGcm)
 	if err != nil {
 		return err
 	}
