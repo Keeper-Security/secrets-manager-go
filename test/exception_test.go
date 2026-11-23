@@ -110,13 +110,15 @@ func TestNotOurException(t *testing.T) {
 
 func TestHTTPErrorErrorsAs(t *testing.T) {
 	// Verify that a 429 JSON-error response produces a KeeperHTTPError with the correct status code.
+	// Uses a non-throttle error code on purpose: "throttled" is now retried automatically and is
+	// covered in throttle_test.go.
 	defer ResetMockResponseQueue()
 
 	configJson := MockConfig{}.MakeJson(MockConfig{}.MakeConfig(nil, "", "", ""))
 	config := ksm.NewMemoryKeyValueStorage(configJson)
 	sm := ksm.NewSecretsManager(&ksm.ClientOptions{Config: config}, Ctx)
 
-	errorJson := `{"error": "throttled", "message": "too many requests"}`
+	errorJson := `{"error": "access_denied", "message": "too many requests"}`
 	MockResponseQueue.AddMockResponse(NewMockResponse([]byte(errorJson), 429, nil))
 
 	_, err := sm.GetSecrets(nil)
@@ -131,8 +133,8 @@ func TestHTTPErrorErrorsAs(t *testing.T) {
 	if khe.StatusCode != 429 {
 		t.Errorf("KeeperHTTPError.StatusCode = %d, want 429", khe.StatusCode)
 	}
-	if khe.ResultCode != "throttled" {
-		t.Errorf("KeeperHTTPError.ResultCode = %q, want %q", khe.ResultCode, "throttled")
+	if khe.ResultCode != "access_denied" {
+		t.Errorf("KeeperHTTPError.ResultCode = %q, want %q", khe.ResultCode, "access_denied")
 	}
 	if khe.Message != "too many requests" {
 		t.Errorf("KeeperHTTPError.Message = %q, want %q", khe.Message, "too many requests")

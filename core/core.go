@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -31,6 +32,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	klog "github.com/keeper-security/secrets-manager-go/core/logger"
 )
@@ -348,9 +350,10 @@ func (c *SecretsManager) PrepareContext() *Context {
 		ClientId:        clientIdBytes,
 		ClientKey:       secretKey,
 	}
-	// Preserve Transport from existing context if it exists
+	// Preserve Transport and Sleep from existing context if it exists
 	if c.context != nil && *c.context != nil {
 		context.Transport = (*c.context).Transport
+		context.Sleep = (*c.context).Sleep
 	}
 	if c.context != nil {
 		*c.context = context
@@ -726,8 +729,10 @@ func (c *SecretsManager) prepareCreateFolderPayload(createOptions CreateOptions,
 		return nil, fmt.Errorf("unable to update folder - client Id is missing from the configuration")
 	}
 
+	// Drive (NSF) folders require AES-GCM for both the folder key wrap and folder data
+	// (KSM-1064); CBC produces "invalid sharedFolderKey" against NSF-enabled endpoints.
 	folderKey, _ := GetRandomBytes(32)
-	if encryptedFolderKey, err := EncryptAesCbc(folderKey, sharedFolderKey); err == nil {
+	if encryptedFolderKey, err := EncryptAesGcm(folderKey, sharedFolderKey); err == nil {
 		payload.SharedFolderKey = BytesToUrlSafeStr(encryptedFolderKey)
 	} else {
 		return nil, err
@@ -736,7 +741,7 @@ func (c *SecretsManager) prepareCreateFolderPayload(createOptions CreateOptions,
 	keeperFolderName := map[string]interface{}{"name": folderName}
 	folderDataJson := DictToJson(keeperFolderName)
 	folderDataBytes := []byte(folderDataJson)
-	if encryptedFolderData, err := EncryptAesCbc(folderDataBytes, folderKey); err == nil {
+	if encryptedFolderData, err := EncryptAesGcm(folderDataBytes, folderKey); err == nil {
 		payload.Data = BytesToUrlSafeStr(encryptedFolderData)
 	} else {
 		return nil, err
@@ -745,7 +750,7 @@ func (c *SecretsManager) prepareCreateFolderPayload(createOptions CreateOptions,
 	return &payload, nil
 }
 
-func (c *SecretsManager) prepareUpdateFolderPayload(folderUid string, folderName string, folderKey []byte) (res *UpdateFolderPayload, err error) {
+func (c *SecretsManager) prepareUpdateFolderPayload(folderUid string, folderName string, folderKey []byte, useGcm bool) (res *UpdateFolderPayload, err error) {
 	payload := UpdateFolderPayload{
 		ClientVersion: keeperSecretsManagerClientId,
 		ClientId:      c.Config.Get(KEY_CLIENT_ID),
@@ -755,10 +760,18 @@ func (c *SecretsManager) prepareUpdateFolderPayload(folderUid string, folderName
 	keeperFolderName := map[string]interface{}{"name": folderName}
 	folderDataJson := DictToJson(keeperFolderName)
 	folderDataBytes := []byte(folderDataJson)
-	if encryptedFolderData, err := EncryptAesCbc(folderDataBytes, folderKey); err == nil {
+	// Use the same cipher the folder was created with (KSM-1064)
+	var encryptErr error
+	var encryptedFolderData []byte
+	if useGcm {
+		encryptedFolderData, encryptErr = EncryptAesGcm(folderDataBytes, folderKey)
+	} else {
+		encryptedFolderData, encryptErr = EncryptAesCbc(folderDataBytes, folderKey)
+	}
+	if encryptErr == nil {
 		payload.Data = BytesToUrlSafeStr(encryptedFolderData)
 	} else {
-		return nil, err
+		return nil, encryptErr
 	}
 
 	if strings.TrimSpace(payload.ClientId) == "" {
@@ -793,6 +806,12 @@ func (c *SecretsManager) PostQuery(path string, payload interface{}) (body []byt
 			*c.context = pc
 		}
 	}
+
+	sleep := time.Sleep
+	if c.context != nil && *c.context != nil && (*c.context).Sleep != nil {
+		sleep = (*c.context).Sleep
+	}
+	throttleAttempt := 0
 
 	for {
 		transmissionKeyId := strings.TrimSpace(c.Config.Get(KEY_SERVER_PUBLIC_KEY_ID))
@@ -854,6 +873,25 @@ func (c *SecretsManager) PostQuery(path string, payload interface{}) (body []byt
 			break
 		}
 
+		// Throttle retry with exponential backoff + jitter (KSM-876 / KSM-881). Detected before
+		// HandleHttpError so the existing key-rotation retry path is left untouched. Gated on the
+		// 403 status so a non-403 response (e.g. 500/502) that happens to carry a
+		// {"error":"throttled"} body is not mistaken for a throttle and retried.
+		if ksmRs.StatusCode == 403 {
+			if retryAfter, throttled := parseThrottle(ksmRs.Data); throttled {
+				if throttleAttempt >= maxThrottleRetries {
+					klog.Error(fmt.Sprintf("Request throttled; exhausted %d retries", maxThrottleRetries))
+					return nil, fmt.Errorf("POST Error: %w", ErrThrottled)
+				}
+				delay := throttleDelay(throttleAttempt, retryAfter)
+				klog.Warning(fmt.Sprintf("Request throttled (attempt %d/%d); retrying in %v",
+					throttleAttempt+1, maxThrottleRetries, delay))
+				sleep(delay)
+				throttleAttempt++
+				continue
+			}
+		}
+
 		// Handle the error. Handler will return a retry status if it is a recoverable error.
 		if retry, httpErr := c.HandleHttpError(ksmRs.HttpResponse, ksmRs.Data, err); !retry {
 			if httpErr == nil {
@@ -908,6 +946,58 @@ func (c *SecretsManager) PostFunction(
 
 	rsBody, err := io.ReadAll(rs.Body)
 	return NewKsmHttpResponse(rs.StatusCode, rsBody, rs), err
+}
+
+// throttleJitter returns a jitter multiplier in [0, 0.25). One-sided so delay is always >= floor,
+// preventing a retry before the backend's 10s memcached window expires. Package var so tests can pin it.
+var throttleJitter = func() float64 { return rand.Float64() * 0.25 }
+
+// parseThrottle reports whether body is a backend throttle error (result_code/error == "throttled")
+// and returns its optional retry_after (seconds, >= 0). It returns (0, false) for any non-throttle
+// response (including non-JSON bodies) so the caller falls through to normal error handling.
+func parseThrottle(body []byte) (retryAfter float64, throttled bool) {
+	responseDict := JsonToDict(string(body))
+	if len(responseDict) == 0 {
+		return 0, false
+	}
+	rc, found := responseDict["result_code"]
+	if !found {
+		rc, found = responseDict["error"]
+	}
+	if !found || fmt.Sprintf("%v", rc) != "throttled" {
+		return 0, false
+	}
+	if ra, ok := responseDict["retry_after"]; ok {
+		switch v := ra.(type) {
+		case float64:
+			retryAfter = v
+		case string:
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				retryAfter = f
+			}
+		}
+		if retryAfter < 0 {
+			retryAfter = 0
+		}
+	}
+	return retryAfter, true
+}
+
+// throttleDelay computes the backoff delay for a 0-based attempt: retry_after when provided (> 0),
+// otherwise exponential backoff (baseThrottleDelaySec * 2**attempt -> 11s, 22s, 44s, 88s, 176s).
+// A 0 to +25% jitter is applied (one-sided so delay is always >= floor).
+func throttleDelay(attempt int, retryAfter float64) time.Duration {
+	var sec float64
+	if retryAfter > 0 {
+		sec = retryAfter
+	} else {
+		sec = float64(baseThrottleDelaySec * (1 << uint(attempt)))
+	}
+	if sec > float64(maxThrottleDelaySec) {
+		sec = float64(maxThrottleDelaySec)
+	}
+	sec += sec * throttleJitter()
+	return time.Duration(sec * float64(time.Second))
 }
 
 func (c *SecretsManager) HandleHttpError(rs *http.Response, body []byte, httpError error) (retry bool, err error) {
@@ -1029,21 +1119,56 @@ func (c *SecretsManager) fetchAndDecryptFolders() (folders []*KeeperFolder, err 
 	decryptedResponseStr := BytesToString(decryptedResponseBytes)
 	decryptedResponseDict := JsonToDict(decryptedResponseStr)
 
-	appKey := Base64ToBytes(c.Config.Get(KEY_APP_KEY))
-	if len(appKey) == 0 {
-		return nil, errors.New("app key is missing from the storage")
+	var appKey []byte
+	if encryptedAppKey, found := decryptedResponseDict["encryptedAppKey"]; found && encryptedAppKey != nil && fmt.Sprintf("%v", encryptedAppKey) != "" {
+		clientKey := UrlSafeStrToBytes(c.Config.Get(KEY_CLIENT_KEY))
+		if len(clientKey) == 0 {
+			return nil, errors.New("client key is missing from the storage")
+		}
+		encryptedMasterKey := UrlSafeStrToBytes(encryptedAppKey.(string))
+		if appKey, err = Decrypt(encryptedMasterKey, clientKey); err == nil {
+			if cfg := c.Config.Set(KEY_APP_KEY, BytesToBase64(appKey)); len(cfg) < 1 {
+				klog.Error("failed to set the application key")
+			}
+			c.Config.Delete(KEY_CLIENT_KEY)
+		} else {
+			return nil, fmt.Errorf("failed to decrypt the application key: %w", err)
+		}
+		if ownerPubKey, found := decryptedResponseDict[string(KEY_OWNER_PUBLIC_KEY)]; found && ownerPubKey != nil {
+			if appOwnerPublicKey := strings.TrimSpace(fmt.Sprintf("%v", ownerPubKey)); appOwnerPublicKey != "" {
+				if cfg := c.Config.Set(KEY_OWNER_PUBLIC_KEY, appOwnerPublicKey); len(cfg) < 1 {
+					klog.Error("failed to set the app owner public key - file uploads and creating new records may fail")
+				}
+			}
+		}
+	} else {
+		appKey = Base64ToBytes(c.Config.Get(KEY_APP_KEY))
+		if len(appKey) == 0 {
+			return nil, errors.New("app key is missing from the storage")
+		}
 	}
 
 	if foldersResp, found := decryptedResponseDict["folders"]; found && foldersResp != nil {
 		if siFolders, ok := foldersResp.([]interface{}); ok {
 			for _, f := range siFolders {
 				fkey := []byte{}
+				useGcm := false
 				fmap := f.(map[string]interface{})
 				if iParent, found := fmap["parent"]; found && iParent != nil {
 					if parent, ok := iParent.(string); ok && parent != "" {
 						sharedFolderKey := GetSharedFolderKey(folders, siFolders, parent)
 						sKey := fmap["folderKey"].(string)
-						if folderKey, err := DecryptAesCbc(UrlSafeStrToBytes(sKey), sharedFolderKey); err == nil {
+						folderKeyBytes := UrlSafeStrToBytes(sKey)
+						// GCM-wrapped subfolder keys are 60 bytes (12-byte nonce + 32-byte key +
+						// 16-byte tag); legacy CBC-wrapped keys are 64 bytes (16-byte IV + 48-byte
+						// padded ciphertext) - always unambiguous, mirrors the dispatch already
+						// landed in the other KSM SDKs (KSM-1043/1058/1061/1062/1063).
+						if len(folderKeyBytes) == 60 {
+							if folderKey, err := Decrypt(folderKeyBytes, sharedFolderKey); err == nil {
+								fkey = folderKey
+								useGcm = true
+							}
+						} else if folderKey, err := DecryptAesCbc(folderKeyBytes, sharedFolderKey); err == nil {
 							fkey = folderKey
 						}
 					}
@@ -1058,7 +1183,7 @@ func (c *SecretsManager) fetchAndDecryptFolders() (folders []*KeeperFolder, err 
 					klog.Error("failed to decrypt the folder key")
 				}
 
-				folder := NewKeeperFolder(fmap, fkey)
+				folder := NewKeeperFolder(fmap, fkey, useGcm)
 				if folder != nil {
 					folders = append(folders, folder)
 				}
@@ -1690,9 +1815,11 @@ func (c *SecretsManager) UpdateFolder(folderUid, folderName string, folders []*K
 	}
 
 	folderKey := []byte{}
+	useGcm := false
 	for _, fldr := range folders {
 		if fldr.FolderUid == folderUid {
 			folderKey = fldr.FolderKey
+			useGcm = fldr.UseGcm
 			break
 		}
 	}
@@ -1701,7 +1828,7 @@ func (c *SecretsManager) UpdateFolder(folderUid, folderName string, folders []*K
 		return errors.New("Unable to update folder - folder key for " + folderUid + " not found")
 	}
 
-	payload, err := c.prepareUpdateFolderPayload(folderUid, folderName, folderKey)
+	payload, err := c.prepareUpdateFolderPayload(folderUid, folderName, folderKey, useGcm)
 	if err != nil {
 		return err
 	}

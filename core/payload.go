@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	klog "github.com/keeper-security/secrets-manager-go/core/logger"
 )
@@ -11,7 +12,8 @@ type Context struct {
 	TransmissionKey TransmissionKey
 	ClientId        []byte
 	ClientKey       []byte
-	Transport       http.RoundTripper // Optional: for test mocking and custom transports
+	Transport       http.RoundTripper   // Optional: for test mocking and custom transports
+	Sleep           func(time.Duration) // Optional: overrides time.Sleep for throttle backoff (tests)
 }
 
 func NewContext(transmissionKey TransmissionKey, clientId []byte, clientKey []byte) *Context {
